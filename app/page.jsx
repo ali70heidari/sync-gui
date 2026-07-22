@@ -163,6 +163,11 @@ export default function Page() {
     setDirty(true);
   }
 
+  function reloadConfig() {
+    if (dirty && !confirm('Reload from database and discard unsaved changes?')) return;
+    loadConfig();
+  }
+
   async function loadTemplates() {
     const response = await fetch('/api/db/templates');
     const data = await response.json();
@@ -173,6 +178,7 @@ export default function Page() {
     const body = {
       id: value.id,
       name: value.label || value.name || value.id,
+      parent_template_id: value.parentTemplateId || '',
       relative_path: value.relativePath || '',
       relative_remote_path: value.relativeRemotePath || '',
       variable_keys: JSON.stringify((value.variableKeys || '').split(',').map((item) => item.trim()).filter(Boolean)),
@@ -341,7 +347,7 @@ export default function Page() {
     });
   }
 
-  function openCategory(item = null) {
+  function openCategory(item = null, nextCategoryPath = []) {
     if (!project || !remote) return;
     setModal({
       kind: 'category',
@@ -349,6 +355,7 @@ export default function Page() {
       projectId: project.id,
       remoteId: remote.id,
       originalId: item?.id || '',
+      inheritedVariables: collectCategoryPathVariables(remote.categories || [], nextCategoryPath.slice(0, -1)),
       value: item ? pickCategory(item) : { ...blankCategory, id: uniqueId(remote.categories, 'category'), label: 'New category' }
     });
   }
@@ -358,7 +365,7 @@ export default function Page() {
       kind: 'template',
       title: item ? 'Edit template' : 'Add template',
       originalId: item?.id || '',
-      value: item ? pickTemplate(item) : { id: uniqueId(templates, 'template'), label: 'New template', relativePath: '', relativeRemotePath: '', variableKeys: '' }
+      value: item ? pickTemplate(item) : { id: uniqueId(templates, 'template'), label: 'New template', parentTemplateId: '', relativePath: '', relativeRemotePath: '', variableKeys: '' }
     });
   }
 
@@ -373,7 +380,7 @@ export default function Page() {
     });
   }
 
-  function openStreamCategory(item = null) {
+  function openStreamCategory(item = null, nextCategoryPath = []) {
     if (!project || !stream) return;
     setModal({
       kind: 'streamCategory',
@@ -381,11 +388,12 @@ export default function Page() {
       projectId: project.id,
       streamId: stream.id,
       originalId: item?.id || '',
+      inheritedVariables: collectCategoryPathVariables(stream.categories || [], nextCategoryPath.slice(0, -1)),
       value: item ? pickCategory(item) : { ...blankCategory, id: uniqueId(stream.categories || [], 'category'), label: 'New category' }
     });
   }
 
-  function openStreamMapping(category, mapping = null, type = null) {
+  function openStreamMapping(category, mapping = null, type = null, nextCategoryPath = categoryPath) {
     if (!project || !stream) return;
     const defaultRemoteId = mapping?.remoteId || projectRemotes[0]?.id || '';
     const base = mapping
@@ -399,16 +407,19 @@ export default function Page() {
       projectId: project.id,
       streamId: stream.id,
       categoryId: category.id,
+      categoryTemplateId: category.templateId || 'default-category',
+      inheritedVariables: collectCategoryPathVariables(stream.categories || [], nextCategoryPath),
       originalId: mapping?.id || '',
       newCategory: isNewCategory ? category : undefined,
       projectRemoteIds: projectRemotes.map((item) => item.id),
       projectRemoteOptions: projectRemotes.map((item) => ({ id: item.id, label: item.label || item.id })),
       remoteKinds: Object.fromEntries(projectRemotes.map((item) => [item.id, getRemoteKind(item)])),
+      templates,
       value
     });
   }
 
-  function openMapping(category, mapping = null, type = null) {
+  function openMapping(category, mapping = null, type = null, nextCategoryPath = categoryPath) {
     if (!project || !remote) return;
     const base = mapping ? { ...mapping } : { ...blankMapping, id: uniqueId(category.mappings, 'mapping'), label: 'New mapping' };
     const value = type && !mapping ? { ...base, type } : base;
@@ -420,6 +431,9 @@ export default function Page() {
       remoteId: remote.id,
       remoteKind: getRemoteKind(remote),
       categoryId: category.id,
+      categoryTemplateId: category.templateId || 'default-category',
+      inheritedVariables: collectCategoryPathVariables(remote.categories || [], nextCategoryPath),
+      templates,
       originalId: mapping?.id || '',
       newCategory: isNewCategory ? category : undefined,
       value
@@ -743,8 +757,15 @@ export default function Page() {
           <button onClick={() => checkForUpdates(true)} disabled={checkingUpdate}>
             {checkingUpdate ? 'Checking...' : 'Check updates'}
           </button>
-          <button onClick={loadConfig}>Reload</button>
-          <button className="primary" onClick={() => saveConfig()}>Save</button>
+          <button
+            onClick={reloadConfig}
+            title={dirty ? 'Reload discards unsaved changes' : 'Reload from database'}
+          >
+            Reload
+          </button>
+          <button className="primary" onClick={() => saveConfig()} disabled={!dirty || status === 'Saving'}>
+            {status === 'Saving' ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
+          </button>
         </div>
       </header>
 
@@ -753,7 +774,7 @@ export default function Page() {
 
       {view === 'projects' && (
         <>
-          <CardStage title="Projects">
+          <CardStage title="Projects" meta={`${config.projects.length} project${config.projects.length === 1 ? '' : 's'}`}>
             {config.projects.map((item) => (
               <ProjectCard
                 key={item.id}
@@ -767,7 +788,7 @@ export default function Page() {
             <AddCard label="Add project" onClick={() => openProject()} />
           </CardStage>
 
-          <CardStage title="Global remotes">
+          <CardStage title="Global remotes" meta={`${(config.remotes || []).length} remote${(config.remotes || []).length === 1 ? '' : 's'}`}>
             {(config.remotes || []).map((item) => (
               <RemoteCard
                 key={item.id}
@@ -780,7 +801,7 @@ export default function Page() {
             <AddCard label="Add remote" onClick={() => openRemote()} />
           </CardStage>
 
-          <CardStage title="Templates">
+          <CardStage title="Templates" meta={`${templates.filter((item) => !item.parent_template_id).length} parent / ${templates.filter((item) => item.parent_template_id).length} child`}>
             {templates.map((item) => (
               <TemplateCard
                 key={item.id}
@@ -796,7 +817,7 @@ export default function Page() {
 
       {view === 'remotes' && project && (
         <>
-          <CardStage title={`${project.label || project.id} remotes`}>
+          <CardStage title={`${project.label || project.id} remotes`} meta="Open a remote for direct mappings, or open a stream for cross-remote sync sets.">
             {projectRemotes.map((item) => {
               const keys = remoteKeys(project, item);
               return (
@@ -815,7 +836,7 @@ export default function Page() {
             <AddCard label="Add remote" onClick={() => openProjectRemote()} />
           </CardStage>
 
-          <CardStage title="Project streams">
+          <CardStage title="Project streams" meta={`${(project.streams || []).length} stream${(project.streams || []).length === 1 ? '' : 's'}`}>
             {(project.streams || []).map((item) => {
               const keys = streamKeys(project, projectRemotes, item);
               return (
@@ -857,7 +878,7 @@ export default function Page() {
                   project={project}
                   remote={remote}
                   syncCheck={syncCheckProps(keys)}
-                  onEdit={() => openMapping(currentCategory, mapping)}
+                  onEdit={() => openMapping(currentCategory, mapping, null, categoryPathPrefix)}
                   onDelete={() => deleteMapping(currentCategory, mapping)}
                   onUp={() => runKeys(keys, 'up')}
                   onDown={() => runKeys(keys, 'down')}
@@ -878,11 +899,11 @@ export default function Page() {
                 isLive={isLive}
                 syncCheck={syncCheckProps(categoryKeys(project, remote, category, nextCategoryPath))}
                 onOpen={() => setCategoryPath(nextCategoryPath)}
-                onEdit={() => openCategory(category)}
+                onEdit={() => openCategory(category, nextCategoryPath)}
                 onDelete={() => deleteCategory(category)}
-                onAddFileMapping={() => openMapping(category, null, 'file')}
-                onAddFolderMapping={() => openMapping(category, null, 'dir')}
-                onEditMapping={(mapping) => openMapping(category, mapping)}
+                onAddFileMapping={() => openMapping(category, null, 'file', nextCategoryPath)}
+                onAddFolderMapping={() => openMapping(category, null, 'dir', nextCategoryPath)}
+                onEditMapping={(mapping) => openMapping(category, mapping, null, nextCategoryPath)}
                 onDeleteMapping={(mapping) => deleteMapping(category, mapping)}
                 onUp={() => runKeys(categoryKeys(project, remote, category, nextCategoryPath), 'up')}
                 onDown={() => runKeys(categoryKeys(project, remote, category, nextCategoryPath), 'down')}
@@ -903,14 +924,14 @@ export default function Page() {
             />
             <button className="card add-card add-mapping-card" onClick={() => {
               const cat = currentCategory || { ...blankCategory, id: uniqueId(remote.categories, 'category'), label: 'New category', mappings: [] };
-              openMapping(cat, null, 'file');
+              openMapping(cat, null, 'file', currentCategory ? categoryPathPrefix : [cat.id]);
             }}>
               <span>+</span>
               <strong>Add file mapping</strong>
             </button>
             <button className="card add-card add-mapping-card" onClick={() => {
               const cat = currentCategory || { ...blankCategory, id: uniqueId(remote.categories, 'category'), label: 'New category', mappings: [] };
-              openMapping(cat, null, 'dir');
+              openMapping(cat, null, 'dir', currentCategory ? categoryPathPrefix : [cat.id]);
             }}>
               <span>+</span>
               <strong>Add folder mapping</strong>
@@ -939,7 +960,7 @@ export default function Page() {
                   project={project}
                   remote={projectRemotes.find((item) => item.id === mapping.remoteId)}
                   syncCheck={syncCheckProps(keys)}
-                  onEdit={() => openStreamMapping(currentCategory, mapping)}
+                  onEdit={() => openStreamMapping(currentCategory, mapping, null, categoryPathPrefix)}
                   onDelete={() => deleteStreamMapping(currentCategory, mapping)}
                   onUp={() => runKeys(keys, 'up')}
                   onDown={() => runKeys(keys, 'down')}
@@ -959,11 +980,11 @@ export default function Page() {
                   isLive={isLive}
                   syncCheck={syncCheckProps(streamCategoryKeys(project, stream, category, nextCategoryPath))}
                   onOpen={() => setCategoryPath(nextCategoryPath)}
-                  onEdit={() => openStreamCategory(category)}
+                  onEdit={() => openStreamCategory(category, nextCategoryPath)}
                   onDelete={() => deleteStreamCategory(category)}
-                  onAddFileMapping={() => openStreamMapping(category, null, 'file')}
-                  onAddFolderMapping={() => openStreamMapping(category, null, 'dir')}
-                  onEditMapping={(mapping) => openStreamMapping(category, mapping)}
+                  onAddFileMapping={() => openStreamMapping(category, null, 'file', nextCategoryPath)}
+                  onAddFolderMapping={() => openStreamMapping(category, null, 'dir', nextCategoryPath)}
+                  onEditMapping={(mapping) => openStreamMapping(category, mapping, null, nextCategoryPath)}
                   onDeleteMapping={(mapping) => deleteStreamMapping(category, mapping)}
                   onUp={() => runKeys(streamCategoryKeys(project, stream, category, nextCategoryPath), 'up')}
                   onDown={() => runKeys(streamCategoryKeys(project, stream, category, nextCategoryPath), 'down')}
@@ -983,14 +1004,14 @@ export default function Page() {
             />
             <button className="card add-card add-mapping-card" onClick={() => {
               const cat = currentCategory || { ...blankCategory, id: uniqueId(stream.categories || [], 'category'), label: 'New category', mappings: [] };
-              openStreamMapping(cat, null, 'file');
+              openStreamMapping(cat, null, 'file', currentCategory ? categoryPathPrefix : [cat.id]);
             }}>
               <span>+</span>
               <strong>Add file mapping</strong>
             </button>
             <button className="card add-card add-mapping-card" onClick={() => {
               const cat = currentCategory || { ...blankCategory, id: uniqueId(stream.categories || [], 'category'), label: 'New category', mappings: [] };
-              openStreamMapping(cat, null, 'dir');
+              openStreamMapping(cat, null, 'dir', currentCategory ? categoryPathPrefix : [cat.id]);
             }}>
               <span>+</span>
               <strong>Add folder mapping</strong>
@@ -1029,11 +1050,14 @@ export default function Page() {
   );
 }
 
-function CardStage({ title, children, actions }) {
+function CardStage({ title, meta, children, actions }) {
   return (
     <section className="stage">
       <div className="stage-title">
-        <h2>{title}</h2>
+        <div>
+          <h2>{title}</h2>
+          {meta && <p>{meta}</p>}
+        </div>
         {actions && <div className="stage-actions">{actions}</div>}
       </div>
       <div className="card-grid">{children}</div>
@@ -1080,16 +1104,24 @@ function RemoteCard({ remote, syncCheck, onOpen, onEdit, onDelete, onUp, onDown 
 }
 
 function TemplateCard({ template, onEdit, onDelete }) {
+  const variableKeys = parseVariableKeys(template.variable_keys);
   return (
-    <article className="card remote-card">
+    <article className={`card template-card ${template.parent_template_id ? 'template-child-card' : 'template-parent-card'}`}>
       <div className="card-main">
         <h3>{template.name || template.id}</h3>
-        <p>{template.relative_path || '.'} -&gt; {template.relative_remote_path || '.'}</p>
+        <p>{template.parent_template_id ? `Available inside ${template.parent_template_id}` : 'Parent template for categories'}</p>
+        <small className="template-path">{template.relative_path || '.'} {'\u2192'} {template.relative_remote_path || '.'}</small>
       </div>
       <div className="stats">
-        <span>{template.variable_keys || '[]'}</span>
+        <span>{variableKeys.length ? variableKeys.join(', ') : 'no variables'}</span>
       </div>
-      <CardTools onEdit={onEdit} onDelete={template.id === 'default-category' ? undefined : onDelete} />
+      {template.id === 'default-category' ? (
+        <div className="card-tools" onClick={(event) => event.stopPropagation()}>
+          <button className="settings-icon" title="Edit" onClick={onEdit}>{'\u2699'}</button>
+        </div>
+      ) : (
+        <CardTools onEdit={onEdit} onDelete={onDelete} />
+      )}
     </article>
   );
 }
@@ -1159,7 +1191,10 @@ function MappingCard({ mapping, category, categoryPathPrefix, project, remote, s
     <article className={`card mapping-card ${isFile ? 'mapping-file' : 'mapping-folder'}`}>
       {syncCheck && <SyncCheck {...syncCheck} />}
       <div className="mapping-card-head">
-        <span className={`mapping-type-badge ${isFile ? 'badge-file' : 'badge-folder'}`}>{isFile ? 'FILE' : 'FOLDER'}</span>
+        <div className="badge-row">
+          <span className={`mapping-type-badge ${isFile ? 'badge-file' : 'badge-folder'}`}>{isFile ? 'FILE' : 'FOLDER'}</span>
+          <TemplateBadge templateId={mapping.templateId} />
+        </div>
         <h3>{mapping.label || mapping.id}</h3>
         <small className="mapping-paths" title={`${mapping.local} -> ${mapping.remote}`}>
           <span className="path-local">{mapping.local}</span>
@@ -1228,7 +1263,10 @@ function CategoryCard({
       {syncCheck && <SyncCheck {...syncCheck} />}
       <div className="category-head">
         <div>
-          <span className="mapping-type-badge badge-category">CATEGORY</span>
+          <div className="badge-row">
+            <span className="mapping-type-badge badge-category">CATEGORY</span>
+            <TemplateBadge templateId={category.templateId} />
+          </div>
           <h3>{category.label || category.id}</h3>
           <p>{category.mappings.length} mapping{category.mappings.length === 1 ? '' : 's'}{category.categories.length > 0 ? `, ${category.categories.length} sub${category.categories.length === 1 ? '' : ''}` : ''}</p>
         </div>
@@ -1293,6 +1331,11 @@ function CategoryCard({
       </button>
     </article>
   );
+}
+
+function TemplateBadge({ templateId }) {
+  if (!templateId || templateId === 'default-category') return null;
+  return <span className="mapping-type-badge badge-template">{templateId}</span>;
 }
 
 function AddCard({ label, onClick }) {
@@ -1413,6 +1456,10 @@ function EditorModal({ modal, setModal, onApply, projectRoot, globalRemotes, tem
     setModal({ ...modal, value: next });
   };
 
+  const updateVariables = (variables) => {
+    setModal({ ...modal, value: { ...value, variables } });
+  };
+
   const updateRemoteSelection = (remoteId, checked) => {
     const current = new Set(value.remoteIds || []);
     if (checked) {
@@ -1504,17 +1551,44 @@ function EditorModal({ modal, setModal, onApply, projectRoot, globalRemotes, tem
           )}
           {modal.kind === 'template' && (
             <>
+              <label>
+                Parent template
+                <select value={value.parentTemplateId || ''} onChange={(event) => update('parentTemplateId', event.target.value)}>
+                  <option value="">None</option>
+                  {visibleTemplates
+                    .filter((template) => template.id !== value.id)
+                    .map((template) => (
+                      <option value={template.id} key={template.id}>
+                        {template.name || template.id}
+                      </option>
+                    ))}
+                </select>
+              </label>
               <Field label="Local path suffix" value={value.relativePath || ''} onChange={(next) => update('relativePath', next)} />
               <Field label="Remote path suffix" value={value.relativeRemotePath || ''} onChange={(next) => update('relativeRemotePath', next)} />
               <Field label="Variable keys" value={value.variableKeys || ''} onChange={(next) => update('variableKeys', next)} />
             </>
           )}
           {(modal.kind === 'category' || modal.kind === 'streamCategory') && (
-            <TemplatePicker value={value.templateId || 'default-category'} templates={visibleTemplates} onChange={(next) => update('templateId', next)} />
+            <>
+              <TemplatePicker value={value.templateId || 'default-category'} templates={visibleTemplates} activeParentIds={[]} onChange={(next) => update('templateId', next)} />
+              <VariableEditor
+                template={visibleTemplates.find((template) => template.id === (value.templateId || 'default-category'))}
+                variables={value.variables || {}}
+                inheritedVariables={modal.inheritedVariables || {}}
+                onChange={updateVariables}
+              />
+            </>
           )}
           {(modal.kind === 'mapping' || modal.kind === 'streamMapping') && (
             <>
-              <TemplatePicker value={value.templateId || 'default-category'} templates={visibleTemplates} onChange={(next) => update('templateId', next)} />
+              <TemplatePicker value={value.templateId || 'default-category'} templates={visibleTemplates} activeParentIds={[modal.categoryTemplateId]} onChange={(next) => update('templateId', next)} />
+              <VariableEditor
+                template={visibleTemplates.find((template) => template.id === (value.templateId || 'default-category'))}
+                variables={value.variables || {}}
+                inheritedVariables={modal.inheritedVariables || {}}
+                onChange={updateVariables}
+              />
               {modal.kind === 'streamMapping' && (
                 <label>
                   Remote
@@ -1573,21 +1647,111 @@ function pickProject(project) {
   return { id: project.id, label: project.label || '', root: project.root, remotes: project.remotes, streams: project.streams || [], syncTargets: project.syncTargets || [] };
 }
 
-function TemplatePicker({ value, templates, onChange }) {
+function TemplatePicker({ value, templates, activeParentIds, onChange }) {
+  const activeParents = new Set(activeParentIds || []);
+  const options = templates.filter((template) => !template.parent_template_id || activeParents.has(template.parent_template_id) || template.id === value);
+  const current = templates.find((template) => template.id === value);
   return (
-    <label>
-      Template
+    <label className="template-picker">
+      <span>Template</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="default-category">Default category</option>
-        {templates
-          .filter((template) => template.id !== 'default-category')
-          .map((template) => (
-            <option value={template.id} key={template.id}>
-              {template.name || template.id}
-            </option>
-          ))}
+        <optgroup label="Parent templates">
+          {options
+            .filter((template) => template.id !== 'default-category' && !template.parent_template_id)
+            .map((template) => (
+              <option value={template.id} key={template.id}>
+                {template.name || template.id}
+              </option>
+            ))}
+        </optgroup>
+        <optgroup label="Child templates available here">
+          {options
+            .filter((template) => template.parent_template_id)
+            .map((template) => (
+              <option value={template.id} key={template.id}>
+                {template.name || template.id}
+              </option>
+            ))}
+        </optgroup>
       </select>
+      <small>
+        {current?.parent_template_id
+          ? `Requires parent template: ${current.parent_template_id}`
+          : 'Child templates appear after the category uses their parent template.'}
+      </small>
     </label>
+  );
+}
+
+function VariableEditor({ template, variables, inheritedVariables = {}, onChange }) {
+  const reserved = new Set(['id', 'label', 'local', 'remote', 'remoteId']);
+  const templateKeys = parseVariableKeys(template?.variable_keys).filter((key) => !reserved.has(key));
+  const inheritedKeys = Object.keys(inheritedVariables || {}).filter((key) => !reserved.has(key));
+  const localKeys = Object.keys(variables || {}).filter((key) => !reserved.has(key));
+  const rows = [...new Set([...templateKeys, ...inheritedKeys, ...localKeys])];
+
+  const setVariable = (key, nextValue) => {
+    onChange({ ...(variables || {}), [key]: nextValue });
+  };
+
+  const renameVariable = (oldKey, nextKey) => {
+    const cleanKey = nextKey.trim();
+    if (!cleanKey || reserved.has(cleanKey)) return;
+    const next = { ...(variables || {}) };
+    next[cleanKey] = next[oldKey] || '';
+    delete next[oldKey];
+    onChange(next);
+  };
+
+  const removeVariable = (key) => {
+    if (Object.hasOwn(inheritedVariables || {}, key) && !Object.hasOwn(variables || {}, key)) return;
+    const next = { ...(variables || {}) };
+    delete next[key];
+    onChange(next);
+  };
+
+  const addVariable = () => {
+    let index = 1;
+    let key = 'variable';
+    const used = new Set([...rows, ...Object.keys(variables || {})]);
+    while (used.has(key)) key = `variable${++index}`;
+    onChange({ ...(variables || {}), [key]: '' });
+  };
+
+  return (
+    <div className="variable-editor">
+      <div className="variable-editor-head">
+        <strong>Variables</strong>
+        <button type="button" onClick={addVariable}>Add variable</button>
+      </div>
+      {rows.length === 0 && <p className="folder-empty">No variables yet.</p>}
+      {rows.map((key) => {
+        const isTemplateKey = templateKeys.includes(key);
+        const hasLocalValue = Object.hasOwn(variables || {}, key);
+        const hasInheritedValue = Object.hasOwn(inheritedVariables || {}, key);
+        const isInheritedOnly = hasInheritedValue && !hasLocalValue && !isTemplateKey;
+        const rowStatus = isInheritedOnly ? 'Inherited' : hasInheritedValue ? 'Overrides' : isTemplateKey ? 'Template' : 'Custom';
+        return (
+          <div className={`variable-row ${isInheritedOnly ? 'inherited-variable-row' : ''}`} key={key}>
+            <input
+              value={key}
+              disabled={isTemplateKey || isInheritedOnly}
+              title={isInheritedOnly ? 'Inherited from parent category' : isTemplateKey ? 'Defined by selected template' : 'Custom variable name'}
+              onChange={(event) => renameVariable(key, event.target.value)}
+            />
+            <input
+              value={isInheritedOnly ? inheritedVariables[key] : (variables || {})[key] || ''}
+              disabled={isInheritedOnly}
+              placeholder={hasInheritedValue ? `Inherited: ${inheritedVariables[key]}` : `Value for ${key}`}
+              onChange={(event) => setVariable(key, event.target.value)}
+            />
+            <span>{rowStatus}</span>
+            <button type="button" title="Remove variable" disabled={isTemplateKey} onClick={() => removeVariable(key)}>×</button>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1620,6 +1784,7 @@ function pickTemplate(template) {
   return {
     id: template.id,
     label: template.name || '',
+    parentTemplateId: template.parent_template_id || '',
     relativePath: template.relative_path || '',
     relativeRemotePath: template.relative_remote_path || '',
     variableKeys: parseVariableKeys(template.variable_keys).join(', ')
@@ -1655,7 +1820,10 @@ function cleanValue(value) {
 
 function validateModalValue(kind, value, modal = {}) {
   if (!/^[A-Za-z0-9._-]+$/.test(value.id || '')) throw new Error('Id can use letters, numbers, dot, dash, and underscore.');
-  if (kind === 'template' && !(value.label || value.name)) throw new Error('Template name is required.');
+  if (kind === 'template') {
+    if (!(value.label || value.name)) throw new Error('Template name is required.');
+    if (value.parentTemplateId === value.id) throw new Error('Template cannot be its own parent.');
+  }
   if (kind === 'project' && !value.root) throw new Error('Project root is required.');
   if (kind === 'remote') {
     const remoteKind = getRemoteKind(value);
@@ -1672,6 +1840,10 @@ function validateModalValue(kind, value, modal = {}) {
       if (modal.projectRemoteIds && !modal.projectRemoteIds.includes(value.remoteId)) throw new Error('Remote does not belong to this project.');
     }
     if (value.type !== 'file' && value.type !== 'dir') throw new Error('Mapping type must be file or folder.');
+    const selectedTemplate = (modal.templates || []).find((template) => template.id === value.templateId);
+    if (selectedTemplate?.parent_template_id && selectedTemplate.parent_template_id !== modal.categoryTemplateId) {
+      throw new Error('Child template requires its parent template on the category.');
+    }
     if (!value.local) throw new Error('Local path is required.');
     if (!value.remote) throw new Error('Remote path is required.');
     const remoteKind = modal.remoteKinds?.[value.remoteId] || modal.remoteKind || 'ssh';
@@ -1832,4 +2004,9 @@ function resolveCategoryPath(categories, path) {
     items = found.categories || [];
   }
   return { current, ancestors };
+}
+
+function collectCategoryPathVariables(categories, path) {
+  const { ancestors } = resolveCategoryPath(categories, path);
+  return ancestors.reduce((vars, category) => ({ ...vars, ...(category.variables || {}) }), {});
 }

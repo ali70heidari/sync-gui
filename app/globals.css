@@ -67,6 +67,21 @@ button:active {
   box-shadow: none;
 }
 
+button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+button:disabled:hover {
+  background: rgba(255, 255, 255, .85);
+  border-color: rgba(225, 231, 240, .8);
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
 button.primary {
   border-color: transparent;
   background: var(--gradient-accent);
@@ -113,6 +128,12 @@ label {
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
+}
+
+label small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .shell {
@@ -412,6 +433,14 @@ label {
   color: var(--text);
 }
 
+.stage-title p {
+  margin: 5px 0 0;
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .stage-actions {
   display: flex;
   align-items: center;
@@ -514,8 +543,15 @@ label {
   z-index: 2;
 }
 
-.card p {
-  display: none;
+.card p,
+.card small {
+  margin: 0;
+  max-width: 250px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-main {
@@ -526,9 +562,12 @@ label {
 }
 
 .stats {
-  display: none;
+  display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  z-index: 2;
 }
 
 .stats span {
@@ -755,6 +794,19 @@ label {
   background: linear-gradient(90deg, #0f766e 0%, #14b8a6 100%);
 }
 
+.template-card::after {
+  background: linear-gradient(90deg, #475467 0%, #14b8a6 100%);
+}
+
+.template-child-card::after {
+  background: linear-gradient(90deg, #7c2d12 0%, #0f766e 100%);
+}
+
+.template-path {
+  display: block;
+  white-space: nowrap;
+}
+
 .project-card:hover {
   border-color: rgba(6, 182, 212, .25);
   box-shadow: 0 12px 34px rgba(6, 182, 212, .12), 0 2px 8px rgba(15, 23, 42, .06);
@@ -763,6 +815,11 @@ label {
 .remote-card:hover {
   border-color: rgba(20, 184, 166, .25);
   box-shadow: 0 12px 34px rgba(20, 184, 166, .12), 0 2px 8px rgba(15, 23, 42, .06);
+}
+
+.template-card:hover {
+  border-color: rgba(20, 184, 166, .25);
+  box-shadow: 0 12px 34px rgba(20, 184, 166, .10), 0 2px 8px rgba(15, 23, 42, .06);
 }
 
 .add-card:hover {
@@ -883,6 +940,13 @@ label {
   text-transform: uppercase;
 }
 
+.badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .badge-file {
   background: rgba(59, 130, 246, .12);
   color: #2563eb;
@@ -896,6 +960,75 @@ label {
 .badge-category {
   background: rgba(139, 92, 246, .12);
   color: #7c3aed;
+}
+
+.badge-template {
+  max-width: 190px;
+  background: rgba(71, 84, 103, .12);
+  color: #475467;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-picker small {
+  border-left: 3px solid var(--accent-soft);
+  padding-left: 8px;
+}
+
+.variable-editor {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(225, 231, 240, .75);
+  border-radius: 10px;
+  background: rgba(247, 249, 252, .72);
+  padding: 10px;
+}
+
+.variable-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.variable-editor-head strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.variable-editor-head button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.variable-row {
+  display: grid;
+  grid-template-columns: minmax(96px, .75fr) minmax(140px, 1.1fr) 74px 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.variable-row input {
+  min-width: 0;
+}
+
+.variable-row button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.variable-row > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.inherited-variable-row input {
+  background: rgba(241, 245, 249, .85);
 }
 
 .mapping-paths {

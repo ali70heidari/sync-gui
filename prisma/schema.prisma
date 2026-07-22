@@ -10,11 +10,14 @@ datasource db {
 model Template {
   id                  String    @id
   name                String
+  parentTemplateId    String?   @map("parent_template_id")
   relativePath        String    @default("") @map("relative_path")
   relativeRemotePath  String    @default("") @map("relative_remote_path")
   variableKeys        String    @default("[]") @map("variable_keys")
   hidden              Int       @default(0)
 
+  parent              Template?  @relation("TemplateTree", fields: [parentTemplateId], references: [id], onDelete: Restrict)
+  children            Template[] @relation("TemplateTree")
   categories          Category[]
   mappings            Mapping[]
 

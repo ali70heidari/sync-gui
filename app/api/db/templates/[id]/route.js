@@ -7,10 +7,12 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const db = await getDb();
     const body = await request.json();
+    if (body.parent_template_id === id) return NextResponse.json({ error: 'Template cannot be its own parent' }, { status: 400 });
     const template = await db.template.update({
       where: { id },
       data: {
         name: body.name,
+        parentTemplateId: body.parent_template_id || null,
         relativePath: body.relative_path || '',
         relativeRemotePath: body.relative_remote_path || '',
         variableKeys: typeof body.variable_keys === 'string' ? body.variable_keys : JSON.stringify(body.variable_keys || []),
