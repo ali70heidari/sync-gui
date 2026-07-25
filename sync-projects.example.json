@@ -62,6 +62,13 @@
                   "type": "dir",
                   "local": "frontend/dist",
                   "remote": "/srv/preview/demo-shop"
+                },
+                {
+                  "id": "named-preview-file",
+                  "label": "Named preview file",
+                  "type": "file",
+                  "local": "frontend/previews/{name}/hello/file.txt",
+                  "remote": "file_{name}.txt"
                 }
               ],
               "categories": []
