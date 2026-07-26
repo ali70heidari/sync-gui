@@ -101,6 +101,7 @@ This is a prompt-to-download updater. It does not silently install updates.
 - `remotes[]` define reusable connection details.
 - each project remote can point to a reusable remote using `remoteId`.
 - each project remote owns its own `categories[]`.
+- local/share mappings can capture one path segment with `{name}` on the source side and reuse it on the destination side, for example `users/{name}/hello/file.txt` to `file_{name}.txt`.
 
 Credentials can be read from `.env` through fields such as:
 
