@@ -33,6 +33,16 @@ function formatVariablesInput(variables) {
   return Object.entries(variables || {}).map(([key, value]) => `${key}=${value}`).join('\n');
 }
 
+function describeJob(job, items) {
+  const names = (job.itemIds || [])
+    .map(id => items.find(item => item.id === id)?.name)
+    .filter(Boolean);
+  if (!names.length) return `${job.itemIds?.length || 0} item(s)`;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} + ${names[1]}`;
+  return `${names[0]} + ${names.length - 1} more`;
+}
+
 export default function SyncListView({ config, onRefresh }) {
   const { items = [], projects = [], remotes = [] } = config;
   const [search, setSearch] = useState('');
@@ -347,7 +357,7 @@ export default function SyncListView({ config, onRefresh }) {
             <div key={j.id} className={`history-item-mini ${j.status}`} onClick={() => { setOutput(j.output || ''); setStatus(j.status === 'succeeded' ? 'done' : 'failed'); }}>
               <span className={`status-dot ${j.status}`} />
               <span className="h-direction">{j.direction}</span>
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--muted)' }}>{j.itemIds.length} item(s)</span>
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--muted)' }}>{describeJob(j, items)}</span>
               <span className="h-time">{new Date(j.startedAt).toLocaleTimeString()}</span>
               <span className={`h-status ${j.status}`}>{j.status}</span>
             </div>

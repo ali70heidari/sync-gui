@@ -723,19 +723,21 @@ label {
   display: flex;
   gap: 8px;
 }
-.item-actions-bottom .btn-up, .item-actions-bottom .btn-down {
-  width: 38px;
+.item-actions-bottom .btn-up, .item-actions-bottom .btn-down, .item-actions-bottom .live-icon {
+  width: 34px;
   height: 34px;
-  padding: 0 10px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  aspect-ratio: 1 / 1;
+}
+.item-actions-bottom .btn-up, .item-actions-bottom .btn-down {
   font-size: 14px;
 }
 .live-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
   border: 1px solid var(--line);
-  border-radius: 12px;
   background: rgba(255, 255, 255, .92);
   color: var(--muted);
   font-size: 13px;
