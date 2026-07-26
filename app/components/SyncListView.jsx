@@ -4,6 +4,7 @@ import EditorModal from './EditorModal';
 import ConfirmModal from './ConfirmModal';
 import TargetPicker from './TargetPicker';
 import { toast } from './Toast';
+import { buildItemTargetMap, pickDueLiveItem } from '../../lib/live-sync';
 
 const PAGE_SIZE = 30;
 const LS_KEY = 'sync-gui-settings';
@@ -45,9 +46,14 @@ export default function SyncListView({ config, onRefresh }) {
   const [history, setHistory] = useState([]);
   const [syncingIds, setSyncingIds] = useState([]);
   const [syncTargetPicker, setSyncTargetPicker] = useState(null);
+  const [liveItemIds, setLiveItemIds] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    return JSON.parse(localStorage.getItem(LS_KEY) || '{}').liveItemIds || [];
+  });
 
   const pollRef = useRef(null);
   const mountedRef = useRef(true);
+  const liveLastRunRef = useRef({});
 
   const [dryRun, setDryRun] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -58,9 +64,31 @@ export default function SyncListView({ config, onRefresh }) {
     return JSON.parse(localStorage.getItem(LS_KEY) || '{}').noDelete || false;
   });
 
-  useEffect(() => { localStorage.setItem(LS_KEY, JSON.stringify({ dryRun, noDelete })); }, [dryRun, noDelete]);
-  useEffect(() => { loadHistory(); const id = setInterval(loadHistory, 5000); return () => clearInterval(id); }, []);
-  useEffect(() => { return () => { mountedRef.current = false; if (pollRef.current) clearInterval(pollRef.current); }; }, []);
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ dryRun, noDelete, liveItemIds }));
+  }, [dryRun, noDelete, liveItemIds]);
+  useEffect(() => {
+    loadHistory();
+    const id = setInterval(loadHistory, 5000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+  useEffect(() => {
+    if (!liveItemIds.length) return;
+    const id = setInterval(() => {
+      if (!mountedRef.current || pollRef.current || status === 'running') return;
+      const nextItem = pickDueLiveItem(items, liveItemIds, liveLastRunRef.current);
+      if (!nextItem) return;
+      // ponytail: live mode runs one card at a time to avoid overlapping jobs in the single-job UI; upgrade path is per-job tracking.
+      doSync([nextItem.id], 'up', buildItemTargetMap(nextItem, 'up'), { liveItemId: nextItem.id });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [items, liveItemIds, status, dryRun, noDelete]);
 
   async function loadHistory() {
     const r = await fetch('/api/history');
@@ -125,16 +153,23 @@ export default function SyncListView({ config, onRefresh }) {
     catch (e) { toast(e.message, 'error'); }
   }
 
-  function doSync(itemIds, direction, targetMap = {}) {
+  function doSync(itemIds, direction, targetMap = {}, options = {}) {
+    const { liveItemId = null } = options;
     setStatus('running');
     setSyncingIds(itemIds);
-    const label = direction === 'up' ? '↑' : '↓';
-    setOutput(`> syncing ${itemIds.length} item(s) ${label}\n`);
+    if (liveItemId) liveLastRunRef.current[liveItemId] = Date.now();
+    const label = direction === 'up' ? 'up' : 'down';
+    setOutput(`> syncing ${itemIds.length} item(s) ${label}${liveItemId ? ' [live]' : ''}\n`);
     fetch('/api/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dryRun, noDelete, direction, itemTargets: targetMap })
     }).then(r => r.json()).then(data => {
-      if (data.error) { setOutput(o => o + (data.error || 'Failed') + '\n'); setStatus('failed'); setSyncingIds([]); return; }
+      if (data.error) {
+        setOutput(o => o + (data.error || 'Failed') + '\n');
+        setStatus('failed');
+        setSyncingIds([]);
+        return;
+      }
       setOutput(o => o + `Job #${data.id} started.\n`);
       pollJob(data.id);
     });
@@ -156,14 +191,25 @@ export default function SyncListView({ config, onRefresh }) {
     doSync(ids, direction, targets);
   }
 
+  function toggleLiveSync(itemId) {
+    setLiveItemIds(current => current.includes(itemId)
+      ? current.filter(id => id !== itemId)
+      : [...current, itemId]
+    );
+  }
+
   function pollJob(id) {
     pollRef.current = setInterval(async () => {
-      if (!mountedRef.current) { clearInterval(pollRef.current); return; }
+      if (!mountedRef.current) {
+        clearInterval(pollRef.current);
+        return;
+      }
       const r = await fetch(`/api/run?id=${id}`);
       if (!r.ok) return;
       const job = await r.json();
       if (job.status !== 'running') {
         clearInterval(pollRef.current);
+        pollRef.current = null;
         setOutput(job.output || '');
         setStatus(job.status === 'succeeded' ? 'done' : 'failed');
         setSyncingIds([]);
@@ -221,8 +267,8 @@ export default function SyncListView({ config, onRefresh }) {
           </span>
           {items.length > 0 && (
             <>
-              <button className="primary" onClick={() => handleSyncAll('up')}>Sync All ↑</button>
-              <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All ↓</button>
+              <button className="primary" onClick={() => handleSyncAll('up')}>Sync All Up</button>
+              <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All Down</button>
             </>
           )}
           <button className="primary" onClick={openNew}>+ New</button>
@@ -242,14 +288,15 @@ export default function SyncListView({ config, onRefresh }) {
         <div className="item-list">
           {paged.map(item => {
             const project = resolveProject(item.projectId, projects);
+            const liveEnabled = liveItemIds.includes(item.id);
             return (
               <div key={item.id} className={`item-card ${item.type}`}>
                 <div className="item-head">
-                  <span className="type-icon">{item.type === 'folder' ? '📁' : '📄'}</span>
+                  <span className="type-icon" aria-hidden="true">{item.type === 'folder' ? '📁' : '📄'}</span>
                   <span className="item-name">{item.name}</span>
                   <div className="item-actions">
-                    <button className="card-btn card-btn-edit" onClick={() => openEdit(item)} aria-label="Edit">⚙</button>
-                    <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} aria-label="Delete">✕</button>
+                    <button className="card-btn card-btn-edit" onClick={() => openEdit(item)} title="Edit" aria-label="Edit">⚙</button>
+                    <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} title="Delete" aria-label="Delete">✕</button>
                   </div>
                 </div>
                 <div className="item-meta">
@@ -258,6 +305,14 @@ export default function SyncListView({ config, onRefresh }) {
                 <div className="item-actions-bottom">
                   <button className="btn-up" onClick={() => setSyncTargetPicker({ item, direction: 'up' })} title="Sync up" aria-label="Sync up">↑</button>
                   <button className="btn-down" onClick={() => setSyncTargetPicker({ item, direction: 'down' })} title="Sync down" aria-label="Sync down">↓</button>
+                  <button
+                    className={`live-icon ${liveEnabled ? 'active' : ''}`}
+                    onClick={() => toggleLiveSync(item.id)}
+                    title={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
+                    aria-label={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
+                  >
+                    L
+                  </button>
                 </div>
               </div>
             );
@@ -267,9 +322,9 @@ export default function SyncListView({ config, onRefresh }) {
 
       {totalPages > 1 && (
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => setPage(page - 1)}>← Prev</button>
+          <button disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</button>
           <span>{page + 1} / {totalPages}</span>
-          <button disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Next →</button>
+          <button disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Next</button>
         </div>
       )}
 
@@ -291,7 +346,7 @@ export default function SyncListView({ config, onRefresh }) {
           {history.slice(0, 15).map(j => (
             <div key={j.id} className={`history-item-mini ${j.status}`} onClick={() => { setOutput(j.output || ''); setStatus(j.status === 'succeeded' ? 'done' : 'failed'); }}>
               <span className={`status-dot ${j.status}`} />
-              <span className="h-direction">{j.direction === 'up' ? '↑' : '↓'}</span>
+              <span className="h-direction">{j.direction}</span>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--muted)' }}>{j.itemIds.length} item(s)</span>
               <span className="h-time">{new Date(j.startedAt).toLocaleTimeString()}</span>
               <span className={`h-status ${j.status}`}>{j.status}</span>
@@ -323,7 +378,7 @@ export default function SyncListView({ config, onRefresh }) {
             </label>
             <label>Project
               <select value={editing.projectId} onChange={e => setEditing({ ...editing, projectId: e.target.value })}>
-                <option value="">— Select —</option>
+                <option value="">Select</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>

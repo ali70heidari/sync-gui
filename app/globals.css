@@ -729,6 +729,30 @@ label {
   padding: 0 10px;
   font-size: 14px;
 }
+.live-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .92);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.live-icon:hover {
+  border-color: rgba(37, 99, 235, .2);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.live-icon.active {
+  border-color: rgba(22, 163, 74, .2);
+  background: rgba(34, 197, 94, .12);
+  color: #15803d;
+}
 
 .item-paths {
   display: grid;
