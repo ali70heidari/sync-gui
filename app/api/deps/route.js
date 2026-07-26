@@ -2,6 +2,13 @@ import { exec } from 'node:child_process';
 import { platform } from 'node:os';
 import { access } from 'node:fs/promises';
 
+function commandExists(command, locationOutput) {
+  return locationOutput.split(/\r?\n/).some((line) => {
+    const normalized = line.trim().replace(/\\/g, '/').toLowerCase();
+    return normalized.endsWith(`/${command.toLowerCase()}`) || normalized.endsWith(`/${command.toLowerCase()}.exe`);
+  });
+}
+
 function check(cmd) {
   return new Promise(resolve => {
     exec(`command -v ${cmd}`, { timeout: 2000 }, err => resolve(!err));
@@ -23,7 +30,9 @@ export async function GET() {
             if (err) reject(err); else resolve(stdout);
           });
         });
-        for (const f of out.trim().split('\n')) deps[f.trim()] = true;
+        for (const command of Object.keys(deps)) {
+          deps[command] = commandExists(command, out);
+        }
       } catch { /* deps stay false */ }
     }
     return Response.json({ ok: Object.values(deps).every(Boolean), platform: 'win32', deps, msys2 });
