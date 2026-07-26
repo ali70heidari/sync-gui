@@ -8,7 +8,7 @@ test('local sync expands brace wildcard tokens into destination paths', async ()
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'sync-gui-wildcard-'));
   const projectRoot = path.join(tmp, 'project');
   const remoteRoot = path.join(tmp, 'remote');
-  const configPath = path.join(tmp, 'sync-projects.json');
+  const configPath = path.join(tmp, 'sync-config.json');
 
   await fsp.mkdir(path.join(projectRoot, 'users', 'alice', 'hello'), { recursive: true });
   await fsp.mkdir(path.join(projectRoot, 'users', 'bob', 'hello'), { recursive: true });
@@ -16,33 +16,27 @@ test('local sync expands brace wildcard tokens into destination paths', async ()
   await fsp.writeFile(path.join(projectRoot, 'users', 'bob', 'hello', 'file.txt'), 'bob\n');
 
   await fsp.writeFile(configPath, JSON.stringify({
+    remotes: [{ id: 'out', name: 'Output', kind: 'local' }],
     projects: [{
       id: 'demo',
-      root: projectRoot,
-      remotes: [{
-        id: 'out',
-        categories: [{
-          id: 'files',
-          categories: [],
-          mappings: [{
-            id: 'hello',
-            type: 'file',
-            local: 'users/{name}/hello/file.txt',
-            remote: 'file_{name}.txt'
-          }]
-        }]
-      }],
-      streams: [],
-      syncTargets: []
+      name: 'Demo',
+      remoteId: 'out'
     }],
-    remotes: [{ id: 'out', kind: 'local', root: remoteRoot }]
+    items: [{
+      id: 'hello',
+      name: 'Hello',
+      source: path.join(projectRoot, 'users', '{name}', 'hello', 'file.txt'),
+      type: 'file',
+      projectId: 'demo',
+      targets: [{ name: 'Output', remoteId: 'out', dest: path.join(remoteRoot, 'file_{name}.txt') }]
+    }]
   }), 'utf8');
 
-  process.env.SYNC_GUI_CONFIG = configPath;
+  process.env.SYNC_CONFIG = configPath;
   const { runSync } = await import(`../lib/sync.js?case=${Date.now()}`);
   const result = await runSync({
     direction: 'up',
-    targetIds: ['demo/out/files/hello']
+    itemTargets: { hello: [0] }
   });
 
   assert.equal(result.exitCode, 0, result.output);

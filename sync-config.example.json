@@ -1,0 +1,43 @@
+{
+  "remotes": [
+    { "id": "prod-server", "name": "Production Server", "kind": "ssh", "host": "192.168.1.100", "port": 22, "username": "deploy", "password": "" },
+    { "id": "staging-server", "name": "Staging Server", "kind": "ssh", "host": "192.168.1.200", "port": 22, "username": "deploy", "password": "" },
+    { "id": "local-output", "name": "Local Output", "kind": "local" }
+  ],
+  "projects": [
+    { "id": "myapp", "name": "My App", "remoteId": "prod-server" }
+  ],
+  "items": [
+    {
+      "id": "static-assets",
+      "name": "Static Assets",
+      "source": "/home/user/project/dist",
+      "type": "folder",
+      "projectId": "myapp",
+      "targets": [
+        { "name": "Production", "remoteId": "prod-server", "dest": "/var/www/html" },
+        { "name": "Staging", "remoteId": "staging-server", "dest": "/var/www/staging/html" }
+      ]
+    },
+    {
+      "id": "config-file",
+      "name": "Config File",
+      "source": "/home/user/project/.env",
+      "type": "file",
+      "projectId": "myapp",
+      "targets": [
+        { "name": "Production", "remoteId": "prod-server", "dest": "/var/www/html/.env" }
+      ]
+    },
+    {
+      "id": "named-file",
+      "name": "Named File",
+      "source": "/home/{name}/hello/file.txt",
+      "type": "file",
+      "projectId": "myapp",
+      "targets": [
+        { "name": "Local output", "remoteId": "local-output", "dest": "./file_{name}.txt" }
+      ]
+    }
+  ]
+}
