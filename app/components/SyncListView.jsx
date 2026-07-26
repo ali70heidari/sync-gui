@@ -9,11 +9,29 @@ const PAGE_SIZE = 30;
 const LS_KEY = 'sync-gui-settings';
 
 function blankItem() {
-  return { id: '', name: '', source: '', type: 'folder', projectId: '', targets: [{ name: '', remoteIds: [], dest: '' }] };
+  return { id: '', name: '', source: '', type: 'folder', projectId: '', targets: [{ name: '', remoteIds: [], dest: '', variables: {} }] };
 }
 
 function resolveProject(id, projects) { return projects.find(p => p.id === id); }
 function resolveRemote(id, remotes) { return remotes.find(r => r.id === id); }
+function parseVariablesInput(value) {
+  const variables = {};
+  for (const line of value.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const nextValue = trimmed.slice(eq + 1).trim();
+    if (!key) continue;
+    variables[key] = nextValue;
+  }
+  return variables;
+}
+
+function formatVariablesInput(variables) {
+  return Object.entries(variables || {}).map(([key, value]) => `${key}=${value}`).join('\n');
+}
 
 export default function SyncListView({ config, onRefresh }) {
   const { items = [], projects = [], remotes = [] } = config;
@@ -61,7 +79,15 @@ export default function SyncListView({ config, onRefresh }) {
 
   function openNew() { setEditing(blankItem()); setShowForm(true); }
   function openEdit(item) {
-    setEditing({ ...item, targets: (item.targets || []).map(t => ({ ...t, remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean) })) });
+    setEditing({
+      ...item,
+      targets: (item.targets || []).map(t => ({
+        ...t,
+        remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean),
+        variables: t.variables || {},
+        variablesText: formatVariablesInput(t.variables || {})
+      }))
+    });
     setShowForm(true);
   }
 
@@ -71,7 +97,12 @@ export default function SyncListView({ config, onRefresh }) {
     if (!editing.projectId) { toast('Select a project.', 'error'); return; }
     const validTargets = (editing.targets || [])
       .filter(t => t.dest && (t.remoteIds?.length || t.remoteId))
-      .map(t => ({ name: t.name || '', dest: t.dest, remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean) }));
+      .map(t => ({
+        name: t.name || '',
+        dest: t.dest,
+        remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean),
+        variables: parseVariablesInput(t.variablesText || '')
+      }));
     if (!validTargets.length) { toast('At least one target with a destination path and remote is required.', 'error'); return; }
     const idx = items.findIndex(i => i.id === editing.id);
     const next = [...items];
@@ -137,16 +168,6 @@ export default function SyncListView({ config, onRefresh }) {
         else toast('Sync failed.', 'error');
       }
     }, 1000);
-  }
-
-  function itemTargetLabel(item) {
-    const ts = item.targets || [];
-    if (!ts.length) return 'No targets';
-    const first = ts[0];
-    const remoteIds = first.remoteIds?.length ? first.remoteIds : [first.remoteId].filter(Boolean);
-    const remote = resolveRemote(remoteIds[0], remotes);
-    const tag = `${remote?.name || '?'}${remoteIds.length > 1 ? ` +${remoteIds.length - 1}` : ''}`;
-    return ts.length === 1 ? `${tag}: ${first.dest}` : `${tag}: ${first.dest} +${ts.length - 1}`;
   }
 
   function toggleTargetRemote(targetIndex, remoteId, checked) {
@@ -222,15 +243,8 @@ export default function SyncListView({ config, onRefresh }) {
                   <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} aria-label="Delete">✕</button>
                 </div>
               </div>
-              <div className="item-paths">
-                <span className="item-source">{item.source}</span>
-                <span className="mapping-arrow">→</span>
-                <span className="item-dest">{itemTargetLabel(item)}</span>
-              </div>
               <div className="item-meta">
                 <span className="group-tag">{project?.name || '?'}</span>
-                <span className={`badge badge-${item.type}`}>{item.type}</span>
-                <span className="conn-detail">{(item.targets || []).length} target(s)</span>
               </div>
             </div>
             );
@@ -317,11 +331,18 @@ export default function SyncListView({ config, onRefresh }) {
                     })}
                   </div>
                   <input className="target-dest" value={t.dest} onChange={e => { const ts = [...editing.targets]; ts[i] = { ...ts[i], dest: e.target.value }; setEditing({ ...editing, targets: ts }); }} placeholder="/remote/path" />
+                  <textarea
+                    className="target-vars"
+                    value={t.variablesText || ''}
+                    onChange={e => { const ts = [...editing.targets]; ts[i] = { ...ts[i], variablesText: e.target.value }; setEditing({ ...editing, targets: ts }); }}
+                    placeholder={'project=kasb\ndomain=files_program'}
+                    rows={3}
+                  />
                 </div>
                 <button type="button" className="target-remove" onClick={() => { const ts = editing.targets.filter((_, j) => j !== i); setEditing({ ...editing, targets: ts }); }} disabled={editing.targets.length <= 1}>&times;</button>
               </div>
             ))}
-            <button type="button" className="target-add" onClick={() => setEditing({ ...editing, targets: [...(editing.targets || []), { name: '', remoteIds: [], dest: '' }] })}>+ Add target</button>
+            <button type="button" className="target-add" onClick={() => setEditing({ ...editing, targets: [...(editing.targets || []), { name: '', remoteIds: [], dest: '', variables: {}, variablesText: '' }] })}>+ Add target</button>
           </div>
         </EditorModal>
       )}

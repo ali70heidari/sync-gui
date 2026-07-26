@@ -13,7 +13,8 @@ export async function GET() {
 export async function PUT(request) {
   try {
     const { config } = await request.json();
-    await writeConfig(config);
+    const previousConfig = await readConfig();
+    await writeConfig(config, { previousConfig });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
