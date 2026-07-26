@@ -13,6 +13,7 @@ export default function RemotesView({ config, onBack, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [checks, setChecks] = useState({});
 
   function openNew() { setEditing(blankRemote()); setShowForm(true); }
   function openEdit(r) { setEditing({ ...r }); setShowForm(true); }
@@ -47,6 +48,25 @@ export default function RemotesView({ config, onBack, onRefresh }) {
     setConfirmDelete(null); onRefresh(); toast('Remote deleted.');
   }
 
+  async function checkConnection(remote) {
+    setChecks(old => ({ ...old, [remote.id]: { status: 'checking', message: 'Checking...' } }));
+    try {
+      const response = await fetch('/api/remotes/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remoteId: remote.id })
+      });
+      const data = await response.json();
+      const status = response.ok && data.ok ? 'ok' : 'failed';
+      const message = data.message || data.error || (status === 'ok' ? 'Connection works.' : 'Connection failed.');
+      setChecks(old => ({ ...old, [remote.id]: { status, message } }));
+      toast(message, status === 'ok' ? 'info' : 'error');
+    } catch (error) {
+      setChecks(old => ({ ...old, [remote.id]: { status: 'failed', message: error.message } }));
+      toast(error.message, 'error');
+    }
+  }
+
   return (
     <div className="stage">
       <div className="stage-title">
@@ -69,9 +89,14 @@ export default function RemotesView({ config, onBack, onRefresh }) {
                 <strong>{r.name}</strong>
                 <span className={`badge badge-${r.kind}`}>{r.kind}</span>
                 {r.kind === 'ssh' && <span className="remote-detail">{r.username}@{r.host}:{r.port}</span>}
+                {r.kind !== 'ssh' && r.root && <span className="remote-detail">{r.root}</span>}
                 <span className="remote-used-by">{config.projects.filter(p => p.remoteId === r.id).length} project(s)</span>
+                {checks[r.id] && <span className={`remote-check ${checks[r.id].status}`}>{checks[r.id].message}</span>}
               </div>
               <div className="remote-actions">
+                <button className="remote-check-btn" onClick={() => checkConnection(r)} disabled={checks[r.id]?.status === 'checking'}>
+                  {checks[r.id]?.status === 'checking' ? 'Checking' : 'Check connection'}
+                </button>
                 <button className="card-btn card-btn-edit" onClick={() => openEdit(r)} aria-label="Edit remote">⚙</button>
                 <button className="card-btn card-btn-del" onClick={() => removeRemote(r.id)} aria-label="Delete remote">✕</button>
               </div>

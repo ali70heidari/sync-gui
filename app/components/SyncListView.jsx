@@ -9,7 +9,7 @@ const PAGE_SIZE = 30;
 const LS_KEY = 'sync-gui-settings';
 
 function blankItem() {
-  return { id: '', name: '', source: '', type: 'folder', projectId: '', targets: [{ name: '', remoteId: '', dest: '' }] };
+  return { id: '', name: '', source: '', type: 'folder', projectId: '', targets: [{ name: '', remoteIds: [], dest: '' }] };
 }
 
 function resolveProject(id, projects) { return projects.find(p => p.id === id); }
@@ -60,14 +60,19 @@ export default function SyncListView({ config, onRefresh }) {
   }
 
   function openNew() { setEditing(blankItem()); setShowForm(true); }
-  function openEdit(item) { setEditing({ ...item, targets: (item.targets || []).map(t => ({ ...t })) }); setShowForm(true); }
+  function openEdit(item) {
+    setEditing({ ...item, targets: (item.targets || []).map(t => ({ ...t, remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean) })) });
+    setShowForm(true);
+  }
 
   function save() {
     if (!editing.name) { toast('Name is required.', 'error'); return; }
     if (!editing.source) { toast('Source path is required.', 'error'); return; }
     if (!editing.projectId) { toast('Select a project.', 'error'); return; }
-    const validTargets = (editing.targets || []).filter(t => t.dest);
-    if (!validTargets.length) { toast('At least one target with a destination path is required.', 'error'); return; }
+    const validTargets = (editing.targets || [])
+      .filter(t => t.dest && (t.remoteIds?.length || t.remoteId))
+      .map(t => ({ name: t.name || '', dest: t.dest, remoteIds: t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean) }));
+    if (!validTargets.length) { toast('At least one target with a destination path and remote is required.', 'error'); return; }
     const idx = items.findIndex(i => i.id === editing.id);
     const next = [...items];
     if (!editing.id) editing.id = editing.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
@@ -138,9 +143,20 @@ export default function SyncListView({ config, onRefresh }) {
     const ts = item.targets || [];
     if (!ts.length) return 'No targets';
     const first = ts[0];
-    const remote = resolveRemote(first.remoteId, remotes);
-    const tag = remote?.name || '?';
+    const remoteIds = first.remoteIds?.length ? first.remoteIds : [first.remoteId].filter(Boolean);
+    const remote = resolveRemote(remoteIds[0], remotes);
+    const tag = `${remote?.name || '?'}${remoteIds.length > 1 ? ` +${remoteIds.length - 1}` : ''}`;
     return ts.length === 1 ? `${tag}: ${first.dest}` : `${tag}: ${first.dest} +${ts.length - 1}`;
+  }
+
+  function toggleTargetRemote(targetIndex, remoteId, checked) {
+    const ts = [...editing.targets];
+    const current = new Set(ts[targetIndex].remoteIds?.length ? ts[targetIndex].remoteIds : [ts[targetIndex].remoteId].filter(Boolean));
+    if (checked) current.add(remoteId);
+    else current.delete(remoteId);
+    ts[targetIndex] = { ...ts[targetIndex], remoteIds: [...current] };
+    delete ts[targetIndex].remoteId;
+    setEditing({ ...editing, targets: ts });
   }
 
   const q = search.toLowerCase();
@@ -289,16 +305,23 @@ export default function SyncListView({ config, onRefresh }) {
               <div key={i} className="target-row">
                 <div className="target-row-fields">
                   <input className="target-name" value={t.name || ''} onChange={e => { const ts = [...editing.targets]; ts[i] = { ...ts[i], name: e.target.value }; setEditing({ ...editing, targets: ts }); }} placeholder="Label (optional)" />
-                  <select className="target-remote" value={t.remoteId} onChange={e => { const ts = [...editing.targets]; ts[i] = { ...ts[i], remoteId: e.target.value }; setEditing({ ...editing, targets: ts }); }}>
-                    <option value="">— Remote —</option>
-                    {remotes.map(r => <option key={r.id} value={r.id}>{r.name} ({r.kind})</option>)}
-                  </select>
+                  <div className="target-remotes">
+                    {remotes.map(r => {
+                      const selected = (t.remoteIds?.length ? t.remoteIds : [t.remoteId].filter(Boolean)).includes(r.id);
+                      return (
+                        <label key={r.id}>
+                          <input type="checkbox" checked={selected} onChange={e => toggleTargetRemote(i, r.id, e.target.checked)} />
+                          {r.name} ({r.kind})
+                        </label>
+                      );
+                    })}
+                  </div>
                   <input className="target-dest" value={t.dest} onChange={e => { const ts = [...editing.targets]; ts[i] = { ...ts[i], dest: e.target.value }; setEditing({ ...editing, targets: ts }); }} placeholder="/remote/path" />
                 </div>
                 <button type="button" className="target-remove" onClick={() => { const ts = editing.targets.filter((_, j) => j !== i); setEditing({ ...editing, targets: ts }); }} disabled={editing.targets.length <= 1}>&times;</button>
               </div>
             ))}
-            <button type="button" className="target-add" onClick={() => setEditing({ ...editing, targets: [...(editing.targets || []), { name: '', remoteId: '', dest: '' }] })}>+ Add target</button>
+            <button type="button" className="target-add" onClick={() => setEditing({ ...editing, targets: [...(editing.targets || []), { name: '', remoteIds: [], dest: '' }] })}>+ Add target</button>
           </div>
         </EditorModal>
       )}

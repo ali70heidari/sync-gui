@@ -71,5 +71,6 @@ node --experimental-detect-module --test tests/api-test.mjs
 
 - `remotes[]` — SSH (`host`, `port`, `username`, `password`) or Local (`type: "local"`)
 - `projects[]` — `name` + `remoteId`
-- `items[]` — `name`, `source`, `dest`, `type` (file|folder), `projectId`
-- local item targets can capture one path segment with `{name}` on the source side and reuse it on the destination side, for example `/home/{name}/hello/file.txt` to `./file_{name}.txt`.
+- `items[]` — `name`, `source`, `type` (file|folder), `projectId`, and `targets[]`
+- `targets[]` — `name`, `dest`, and `remoteIds[]`; legacy single `remoteId` still works
+- local item targets can capture path segments with ordinary tokens like `{project}` or `{name}` on the source side and reuse them on the destination side, for example `/usr/local/directadmin/data/users/{project}/nginx.conf` to `./{SERVER_NAME}/{project}_nginx.conf`. `{SERVER_NAME}` is always available and resolves to the selected remote/server name.

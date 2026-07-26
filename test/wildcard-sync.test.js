@@ -16,19 +16,24 @@ test('local sync expands brace wildcard tokens into destination paths', async ()
   await fsp.writeFile(path.join(projectRoot, 'users', 'bob', 'hello', 'file.txt'), 'bob\n');
 
   await fsp.writeFile(configPath, JSON.stringify({
-    remotes: [{ id: 'out', name: 'Output', kind: 'local' }],
+    remotes: [
+      { id: 'out-a', name: 'Output_A', kind: 'local' },
+      { id: 'out-b', name: 'Output_B', kind: 'local' }
+    ],
     projects: [{
       id: 'demo',
-      name: 'Demo',
-      remoteId: 'out'
+      name: 'Demo_Project',
+      remoteId: 'out-a'
     }],
     items: [{
       id: 'hello',
       name: 'Hello',
-      source: path.join(projectRoot, 'users', '{name}', 'hello', 'file.txt'),
+      source: path.join(projectRoot, 'users', '{project}', 'hello', 'file.txt'),
       type: 'file',
       projectId: 'demo',
-      targets: [{ name: 'Output', remoteId: 'out', dest: path.join(remoteRoot, 'file_{name}.txt') }]
+      targets: [
+        { name: 'Outputs', remoteIds: ['out-a', 'out-b'], dest: path.join(remoteRoot, '{SERVER_NAME}', 'file_{project}.txt') }
+      ]
     }]
   }), 'utf8');
 
@@ -40,6 +45,8 @@ test('local sync expands brace wildcard tokens into destination paths', async ()
   });
 
   assert.equal(result.exitCode, 0, result.output);
-  assert.equal(await fsp.readFile(path.join(remoteRoot, 'file_alice.txt'), 'utf8'), 'alice\n');
-  assert.equal(await fsp.readFile(path.join(remoteRoot, 'file_bob.txt'), 'utf8'), 'bob\n');
+  assert.equal(await fsp.readFile(path.join(remoteRoot, 'Output_A', 'file_alice.txt'), 'utf8'), 'alice\n');
+  assert.equal(await fsp.readFile(path.join(remoteRoot, 'Output_A', 'file_bob.txt'), 'utf8'), 'bob\n');
+  assert.equal(await fsp.readFile(path.join(remoteRoot, 'Output_B', 'file_alice.txt'), 'utf8'), 'alice\n');
+  assert.equal(await fsp.readFile(path.join(remoteRoot, 'Output_B', 'file_bob.txt'), 'utf8'), 'bob\n');
 });

@@ -32,11 +32,11 @@
     {
       "id": "named-file",
       "name": "Named File",
-      "source": "/home/{name}/hello/file.txt",
+      "source": "/usr/local/directadmin/data/users/{project}/nginx.conf",
       "type": "file",
       "projectId": "myapp",
       "targets": [
-        { "name": "Local output", "remoteId": "local-output", "dest": "./file_{name}.txt" }
+        { "name": "Nginx config", "remoteIds": ["prod-server", "staging-server"], "dest": "/usr/local/directadmin/data/users/{project}/nginx.conf" }
       ]
     }
   ]

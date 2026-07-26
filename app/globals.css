@@ -554,6 +554,11 @@ label {
 .remote-used-by { color: var(--muted); font-size: 11px; }
 .remote-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .remote-actions .card-btn { position: static; opacity: 1; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; }
+.remote-check-btn { min-width: 132px; padding: 6px 10px; font-size: 12px; }
+.remote-check { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; padding: 3px 8px; font-size: 11px; }
+.remote-check.ok { color: var(--ok); background: var(--ok-soft); }
+.remote-check.failed { color: var(--danger); background: var(--danger-soft); }
+.remote-check.checking { color: var(--accent-strong); background: var(--accent-soft); }
 
 /* Modal */
 .modal-backdrop {
@@ -842,6 +847,9 @@ label {
 .target-row-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; flex: 1; }
 .target-row .target-remote { width: auto; }
 .target-row input, .target-row select { font-size: 13px; padding: 8px 10px; }
+.target-remotes { display: grid; gap: 4px; max-height: 92px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: rgba(255,255,255,.7); }
+.target-remotes label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.target-remotes input { width: auto; }
 .target-remove { width: 32px; height: 32px; padding: 0; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-size: 16px; }
 .target-remove:disabled { opacity: .3; cursor: not-allowed; }
 .target-add { font-size: 12px; font-weight: 600; padding: 6px 14px; }

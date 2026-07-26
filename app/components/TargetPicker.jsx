@@ -5,8 +5,9 @@ export default function TargetPicker({ item, remotes, direction, onStart, onClos
   const allIndices = targets.map((_, i) => i);
 
   function resolveLabel(target) {
-    const remote = remotes.find(r => r.id === target.remoteId);
-    const tag = remote ? `${remote.name} (${remote.kind})` : '?';
+    const remoteIds = target.remoteIds?.length ? target.remoteIds : [target.remoteId].filter(Boolean);
+    const remote = remotes.find(r => r.id === remoteIds[0]);
+    const tag = remote ? `${remote.name} (${remote.kind})${remoteIds.length > 1 ? ` +${remoteIds.length - 1}` : ''}` : '?';
     return target.name ? `${target.name} — ${tag}` : tag;
   }
 
