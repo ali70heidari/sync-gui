@@ -34,6 +34,8 @@ cp sync-config.example.json sync-config.json
 npm run dev
 ```
 
+Keep `sync-config.json` local. The repo only tracks `sync-config.example.json`.
+
 Open the local Next.js URL shown in the terminal. For the Electron app:
 
 ```bash

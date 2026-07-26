@@ -5,6 +5,7 @@ dev.log
 .mimocode
 .electron-cache/
 .env
+sync-config.json
 sync-projects.json
 sync-gui.db
 
