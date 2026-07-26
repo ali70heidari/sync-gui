@@ -84,10 +84,12 @@ export default function Page() {
           <input ref={fileInput} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportPick} />
         </div>
       </header>
-      <HealthCheck />
-      {tab === 'items' && <SyncListView key={'il' + refreshKey} config={config} onRefresh={refresh} />}
-      {tab === 'projects' && <ProjectsView key={'pv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
-      {tab === 'remotes' && <RemotesView key={'rv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
+      <main>
+        <HealthCheck />
+        {tab === 'items' && <SyncListView key={'il' + refreshKey} config={config} onRefresh={refresh} />}
+        {tab === 'projects' && <ProjectsView key={'pv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
+        {tab === 'remotes' && <RemotesView key={'rv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
+      </main>
       <ToastContainer />
       {importAnalysis && (
         <ImportModal

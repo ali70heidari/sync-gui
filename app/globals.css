@@ -12,7 +12,7 @@
   --danger-soft: #fee2e2;
   --ok: #067647;
   --ok-soft: #dcfce7;
-  --warn: #d97706;
+  --warn: #92400e;
   --warn-soft: #fef3c7;
   --shadow: 0 18px 42px rgba(15, 23, 42, .08);
   --shadow-card: 0 4px 24px rgba(15, 23, 42, .06), 0 1px 4px rgba(15, 23, 42, .04);
@@ -671,15 +671,16 @@ label {
 /* Item list - flat model */
 .item-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
 }
 .item-card {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, .85);
-  min-height: 104px;
-  padding: 14px 16px;
+  min-height: 180px;
+  padding: 24px;
   display: grid;
   align-content: space-between;
   gap: 12px;
@@ -701,21 +702,33 @@ label {
   font-size: 15px;
   min-width: 0;
   line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+  overflow: visible;
 }
 .item-actions {
+  position: absolute;
+  top: 24px;
+  right: 24px;
   display: flex;
   gap: 4px;
   flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 96px;
 }
 .item-actions .card-btn { position: static; opacity: 1; width: 30px; height: 30px; border-radius: 50%; font-size: 14px; }
-.item-actions .btn-up, .item-actions .btn-down { width: 34px; height: 30px; padding: 0 10px; font-size: 13px; }
+.item-actions-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+.item-actions-bottom .btn-up, .item-actions-bottom .btn-down {
+  width: 38px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 14px;
+}
 
 .item-paths {
   display: grid;

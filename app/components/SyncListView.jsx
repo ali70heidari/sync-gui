@@ -13,7 +13,6 @@ function blankItem() {
 }
 
 function resolveProject(id, projects) { return projects.find(p => p.id === id); }
-function resolveRemote(id, remotes) { return remotes.find(r => r.id === id); }
 function parseVariablesInput(value) {
   const variables = {};
   for (const line of value.split(/\r?\n/)) {
@@ -77,7 +76,14 @@ export default function SyncListView({ config, onRefresh }) {
     onRefresh();
   }
 
-  function openNew() { setEditing(blankItem()); setShowForm(true); }
+  function openNew() {
+    setEditing({
+      ...blankItem(),
+      targets: [{ name: '', remoteIds: [], dest: '', variables: {}, variablesText: '' }]
+    });
+    setShowForm(true);
+  }
+
   function openEdit(item) {
     setEditing({
       ...item,
@@ -120,7 +126,8 @@ export default function SyncListView({ config, onRefresh }) {
   }
 
   function doSync(itemIds, direction, targetMap = {}) {
-    setStatus('running'); setSyncingIds(itemIds);
+    setStatus('running');
+    setSyncingIds(itemIds);
     const label = direction === 'up' ? '↑' : '↓';
     setOutput(`> syncing ${itemIds.length} item(s) ${label}\n`);
     fetch('/api/run', {
@@ -142,11 +149,7 @@ export default function SyncListView({ config, onRefresh }) {
     const targets = {};
     for (const item of items) {
       if (!item.targets?.length) continue;
-      if (direction === 'up') {
-        targets[item.id] = item.targets.map((_, i) => i);
-      } else {
-        targets[item.id] = [0];
-      }
+      targets[item.id] = direction === 'up' ? item.targets.map((_, i) => i) : [0];
     }
     const ids = Object.keys(targets);
     if (!ids.length) { toast('No items with targets to sync.', 'error'); return; }
@@ -163,7 +166,8 @@ export default function SyncListView({ config, onRefresh }) {
         clearInterval(pollRef.current);
         setOutput(job.output || '');
         setStatus(job.status === 'succeeded' ? 'done' : 'failed');
-        setSyncingIds([]); loadHistory();
+        setSyncingIds([]);
+        loadHistory();
         if (job.status === 'succeeded') toast('Sync completed.');
         else toast('Sync failed.', 'error');
       }
@@ -198,7 +202,12 @@ export default function SyncListView({ config, onRefresh }) {
             <input placeholder="Search..." value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
           </label>
           {projects.length > 0 && (
-            <select className="filter-select" value={projectFilter} onChange={e => { setProjectFilter(e.target.value); setPage(0); }}>
+            <select
+              className="filter-select"
+              aria-label="Filter projects"
+              value={projectFilter}
+              onChange={e => { setProjectFilter(e.target.value); setPage(0); }}
+            >
               <option value="">All projects</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -210,10 +219,12 @@ export default function SyncListView({ config, onRefresh }) {
           <span className={`status ${status}`}>
             {status === 'running' ? `${syncingIds.length} running` : status}
           </span>
-          {items.length > 0 && <>
-            <button className="primary" onClick={() => handleSyncAll('up')}>Sync All ↑</button>
-            <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All ↓</button>
-          </>}
+          {items.length > 0 && (
+            <>
+              <button className="primary" onClick={() => handleSyncAll('up')}>Sync All ↑</button>
+              <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All ↓</button>
+            </>
+          )}
           <button className="primary" onClick={openNew}>+ New</button>
         </div>
       </div>
@@ -232,21 +243,23 @@ export default function SyncListView({ config, onRefresh }) {
           {paged.map(item => {
             const project = resolveProject(item.projectId, projects);
             return (
-            <div key={item.id} className={`item-card ${item.type}`}>
-              <div className="item-head">
-                <span className="type-icon">{item.type === 'folder' ? '📁' : '📄'}</span>
-                <span className="item-name">{item.name}</span>
-                <div className="item-actions">
+              <div key={item.id} className={`item-card ${item.type}`}>
+                <div className="item-head">
+                  <span className="type-icon">{item.type === 'folder' ? '📁' : '📄'}</span>
+                  <span className="item-name">{item.name}</span>
+                  <div className="item-actions">
+                    <button className="card-btn card-btn-edit" onClick={() => openEdit(item)} aria-label="Edit">⚙</button>
+                    <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} aria-label="Delete">✕</button>
+                  </div>
+                </div>
+                <div className="item-meta">
+                  <span className="group-tag">{project?.name || '?'}</span>
+                </div>
+                <div className="item-actions-bottom">
                   <button className="btn-up" onClick={() => setSyncTargetPicker({ item, direction: 'up' })} title="Sync up" aria-label="Sync up">↑</button>
                   <button className="btn-down" onClick={() => setSyncTargetPicker({ item, direction: 'down' })} title="Sync down" aria-label="Sync down">↓</button>
-                  <button className="card-btn card-btn-edit" onClick={() => openEdit(item)} aria-label="Edit">⚙</button>
-                  <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} aria-label="Delete">✕</button>
                 </div>
               </div>
-              <div className="item-meta">
-                <span className="group-tag">{project?.name || '?'}</span>
-              </div>
-            </div>
             );
           })}
         </div>
