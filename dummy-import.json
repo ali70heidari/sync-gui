@@ -1,0 +1,32 @@
+{
+  "remotes": [
+    {
+      "id": "dummy-local",
+      "name": "Dummy Local",
+      "kind": "local"
+    }
+  ],
+  "projects": [
+    {
+      "id": "dummy-project",
+      "name": "Dummy Project",
+      "remoteId": "dummy-local"
+    }
+  ],
+  "items": [
+    {
+      "id": "dummy-item",
+      "name": "Dummy Files",
+      "source": "C:\\temp\\sync-source",
+      "type": "folder",
+      "projectId": "dummy-project",
+      "targets": [
+        {
+          "name": "Local Copy",
+          "remoteId": "dummy-local",
+          "dest": "C:\\temp\\sync-destination"
+        }
+      ]
+    }
+  ]
+}
