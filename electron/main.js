@@ -44,8 +44,6 @@ if (app.isPackaged) {
       process.env.SYNC_GUI_DRIVE_PREFIX = '/cygdrive';
       process.env.SYNC_GUI_KNOWN_HOSTS = '/home/sync-gui/.ssh/known_hosts';
       process.env.HOME = '/home/sync-gui';
-      process.env.TMP = '/tmp';
-      process.env.TEMP = '/tmp';
       process.env.PATH = `${bundledBin}${path.delimiter}${process.env.PATH || ''}`;
     }
   }
