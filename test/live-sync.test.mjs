@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { LIVE_SYNC_MS, buildItemTargetMap, pickDueLiveItem } from '../lib/live-sync.js';
+import { LIVE_SYNC_MS, buildBulkTargetMap, buildItemTargetMap, pickDueLiveItem } from '../lib/live-sync.js';
 
 test('buildItemTargetMap selects every upload target for a card', () => {
   assert.deepEqual(buildItemTargetMap({ id: 'a', targets: [{}, {}, {}] }), { a: [0, 1, 2] });
   assert.deepEqual(buildItemTargetMap({ id: 'a', targets: [{}] }, 'down'), { a: [0] });
+});
+
+test('buildBulkTargetMap selects only the cards supplied by the visible list', () => {
+  const visible = [
+    { id: 'project-a-1', targets: [{}, {}] },
+    { id: 'project-a-2', targets: [{}] }
+  ];
+
+  assert.deepEqual(buildBulkTargetMap(visible, 'up'), {
+    'project-a-1': [0, 1],
+    'project-a-2': [0]
+  });
+  assert.deepEqual(buildBulkTargetMap(visible, 'down'), {
+    'project-a-1': [0],
+    'project-a-2': [0]
+  });
 });
 
 test('pickDueLiveItem skips cards until their 10-second window has passed', () => {

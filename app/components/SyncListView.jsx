@@ -4,13 +4,14 @@ import EditorModal from './EditorModal';
 import ConfirmModal from './ConfirmModal';
 import TargetPicker from './TargetPicker';
 import { toast } from './Toast';
-import { buildItemTargetMap, pickDueLiveItem } from '../../lib/live-sync';
+import { buildBulkTargetMap, buildItemTargetMap, pickDueLiveItem } from '../../lib/live-sync';
+import { categoryBreadcrumbs, removeCategory, visibleCategoryContents } from '../../lib/categories';
 
 const PAGE_SIZE = 30;
 const LS_KEY = 'sync-gui-settings';
 
 function blankItem() {
-  return { id: '', name: '', source: '', type: 'folder', projectId: '', targets: [{ name: '', remoteIds: [], dest: '', variables: {} }] };
+  return { id: '', name: '', source: '', type: 'folder', projectId: '', categoryId: '', targets: [{ name: '', remoteIds: [], dest: '', variables: {} }] };
 }
 
 function resolveProject(id, projects) { return projects.find(p => p.id === id); }
@@ -44,7 +45,7 @@ function describeJob(job, items) {
 }
 
 export default function SyncListView({ config, onRefresh }) {
-  const { items = [], projects = [], remotes = [] } = config;
+  const { items = [], projects = [], categories = [], remotes = [] } = config;
   const [search, setSearch] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [page, setPage] = useState(0);
@@ -57,6 +58,9 @@ export default function SyncListView({ config, onRefresh }) {
   const [history, setHistory] = useState([]);
   const [syncingIds, setSyncingIds] = useState([]);
   const [syncTargetPicker, setSyncTargetPicker] = useState(null);
+  const [activeCategoryId, setActiveCategoryId] = useState('');
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(null);
   const [liveItemIds, setLiveItemIds] = useState(() => {
     if (typeof window === 'undefined') return [];
     return JSON.parse(localStorage.getItem(LS_KEY) || '{}').liveItemIds || [];
@@ -123,10 +127,10 @@ export default function SyncListView({ config, onRefresh }) {
     }
   }
 
-  async function saveConfig(nextItems) {
+  async function saveConfig(nextItems, nextCategories = categories) {
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes, projects, items: nextItems } })
+      body: JSON.stringify({ config: { remotes, projects, categories: nextCategories, items: nextItems } })
     });
     if (!r.ok) { const d = await r.json(); throw new Error(d.error); }
     onRefresh();
@@ -135,6 +139,10 @@ export default function SyncListView({ config, onRefresh }) {
   function openNew() {
     setEditing({
       ...blankItem(),
+      projectId: activeCategoryId
+        ? categories.find(category => category.id === activeCategoryId)?.projectId || projectFilter
+        : projectFilter,
+      categoryId: activeCategoryId,
       targets: [{ name: '', remoteIds: [], dest: '', variables: {}, variablesText: '' }]
     });
     setShowForm(true);
@@ -180,6 +188,53 @@ export default function SyncListView({ config, onRefresh }) {
     catch (e) { toast(e.message, 'error'); }
   }
 
+  function openNewCategory() {
+    const projectId = activeCategoryId
+      ? categories.find(category => category.id === activeCategoryId)?.projectId
+      : projectFilter;
+    if (!projectId) {
+      toast('Select a project before adding a category.', 'error');
+      return;
+    }
+    setEditingCategory({ id: '', name: '', projectId, parentId: activeCategoryId });
+  }
+
+  function openEditCategory(category) {
+    setEditingCategory({ ...category });
+  }
+
+  async function saveCategory() {
+    if (!editingCategory.name.trim()) return toast('Category name is required.', 'error');
+    const next = [...categories];
+    const index = next.findIndex(category => category.id === editingCategory.id);
+    const saved = {
+      ...editingCategory,
+      name: editingCategory.name.trim(),
+      id: editingCategory.id || `category-${Date.now().toString(36)}`
+    };
+    if (index >= 0) next[index] = saved;
+    else next.push(saved);
+    try {
+      await saveConfig(items, next);
+      setEditingCategory(null);
+      toast('Category saved.');
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  }
+
+  async function doRemoveCategory() {
+    const next = removeCategory(categories, items, confirmDeleteCategory.id);
+    try {
+      await saveConfig(next.items, next.categories);
+      if (activeCategoryId === confirmDeleteCategory.id) setActiveCategoryId(confirmDeleteCategory.parentId || '');
+      setConfirmDeleteCategory(null);
+      toast('Category removed; its contents were moved up one level.');
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  }
+
   function doSync(itemIds, direction, targetMap = {}, options = {}) {
     const { liveItemId = null } = options;
     setStatus('running');
@@ -208,13 +263,9 @@ export default function SyncListView({ config, onRefresh }) {
   }
 
   function handleSyncAll(direction) {
-    const targets = {};
-    for (const item of items) {
-      if (!item.targets?.length) continue;
-      targets[item.id] = direction === 'up' ? item.targets.map((_, i) => i) : [0];
-    }
+    const targets = buildBulkTargetMap(paged, direction);
     const ids = Object.keys(targets);
-    if (!ids.length) { toast('No items with targets to sync.', 'error'); return; }
+    if (!ids.length) { toast('No visible items with targets to sync.', 'error'); return; }
     doSync(ids, direction, targets);
   }
 
@@ -258,13 +309,29 @@ export default function SyncListView({ config, onRefresh }) {
   }
 
   const q = search.toLowerCase();
-  const filtered = items.filter(i => {
-    if (q && !i.name.toLowerCase().includes(q) && !i.source.toLowerCase().includes(q)) return false;
-    if (projectFilter && i.projectId !== projectFilter) return false;
-    return true;
-  });
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const activeCategory = categories.find(category => category.id === activeCategoryId);
+  const visibleProjectId = activeCategory?.projectId || projectFilter;
+  const contents = visibleProjectId
+    ? visibleCategoryContents(categories, items, visibleProjectId, activeCategoryId)
+    : {
+        categories: categories.filter(category => !(category.parentId || '')),
+        items: items.filter(item => !(item.categoryId || ''))
+      };
+  const visibleCategories = contents.categories.filter(category =>
+    !q || category.name.toLowerCase().includes(q)
+  );
+  const visibleItems = contents.items.filter(item =>
+    (!q || item.name.toLowerCase().includes(q) || item.source.toLowerCase().includes(q))
+    && (!projectFilter || item.projectId === projectFilter)
+  );
+  const cards = [
+    ...visibleCategories.map(category => ({ kind: 'category', value: category })),
+    ...visibleItems.map(item => ({ kind: 'item', value: item }))
+  ];
+  const totalPages = Math.ceil(cards.length / PAGE_SIZE) || 1;
+  const pagedCards = cards.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const paged = pagedCards.filter(card => card.kind === 'item').map(card => card.value);
+  const breadcrumbs = categoryBreadcrumbs(categories, activeCategoryId);
 
   return (
     <div className="stage">
@@ -279,7 +346,7 @@ export default function SyncListView({ config, onRefresh }) {
               className="filter-select"
               aria-label="Filter projects"
               value={projectFilter}
-              onChange={e => { setProjectFilter(e.target.value); setPage(0); }}
+              onChange={e => { setProjectFilter(e.target.value); setActiveCategoryId(''); setPage(0); }}
             >
               <option value="">All projects</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -298,22 +365,72 @@ export default function SyncListView({ config, onRefresh }) {
               <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All Down</button>
             </>
           )}
+          <button className="primary" onClick={openNewCategory}>+ Category</button>
           <button className="primary" onClick={openNew}>+ Add</button>
         </div>
       </div>
 
       {status === 'running' && <div className="progress-bar"><div className="progress-fill" /></div>}
 
-      {items.length === 0 ? (
+      {(projectFilter || activeCategoryId) && (
+        <nav className="category-breadcrumbs" aria-label="Category path">
+          <button onClick={() => { setActiveCategoryId(''); setPage(0); }}>
+            {projects.find(project => project.id === visibleProjectId)?.name || 'Root'}
+          </button>
+          {breadcrumbs.map(category => (
+            <span key={category.id}>
+              <span aria-hidden="true">/</span>
+              <button onClick={() => { setActiveCategoryId(category.id); setPage(0); }}>{category.name}</button>
+            </span>
+          ))}
+        </nav>
+      )}
+
+      {items.length === 0 && categories.length === 0 ? (
         <div className="empty-state" style={{ padding: 48, fontSize: 15 }}>
-          No sync items yet.
-          <br /><button className="primary" onClick={openNew} style={{ marginTop: 16 }}>+ Add</button>
+          No categories or sync items yet.
+          <br /><button className="primary" onClick={openNew} style={{ marginTop: 16 }}>+ Add sync item</button>
         </div>
-      ) : paged.length === 0 ? (
-        <p className="empty-state">No items match your search.</p>
+      ) : pagedCards.length === 0 ? (
+        <p className="empty-state">No cards match this view.</p>
       ) : (
         <div className="item-list">
-          {paged.map(item => {
+          {pagedCards.map(card => {
+            if (card.kind === 'category') {
+              const category = card.value;
+              const childCount = categories.filter(child => child.parentId === category.id).length;
+              const itemCount = items.filter(item => item.categoryId === category.id).length;
+              return (
+                <div
+                  key={`category-${category.id}`}
+                  className="item-card category-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { setProjectFilter(category.projectId); setActiveCategoryId(category.id); setPage(0); }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setProjectFilter(category.projectId);
+                      setActiveCategoryId(category.id);
+                      setPage(0);
+                    }
+                  }}
+                >
+                  <div className="item-head">
+                    <span className="type-icon" aria-hidden="true">📁</span>
+                    <span className="item-name">{category.name}</span>
+                    <div className="item-actions">
+                      <button className="card-btn card-btn-edit" onClick={event => { event.stopPropagation(); openEditCategory(category); }} title="Edit" aria-label="Edit category">⚙</button>
+                      <button className="card-btn card-btn-del" onClick={event => { event.stopPropagation(); setConfirmDeleteCategory(category); }} title="Delete" aria-label="Delete category">×</button>
+                    </div>
+                  </div>
+                  <div className="category-summary">
+                    {childCount} folder(s) · {itemCount} sync item(s)
+                  </div>
+                </div>
+              );
+            }
+            const item = card.value;
             const project = resolveProject(item.projectId, projects);
             const liveEnabled = liveItemIds.includes(item.id);
             return (
@@ -407,9 +524,20 @@ export default function SyncListView({ config, onRefresh }) {
               </select>
             </label>
             <label>Project (optional)
-              <select value={editing.projectId} onChange={e => setEditing({ ...editing, projectId: e.target.value })}>
+              <select value={editing.projectId} onChange={e => setEditing({ ...editing, projectId: e.target.value, categoryId: '' })}>
                 <option value="">None</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label>Category (optional)
+              <select value={editing.categoryId || ''} onChange={e => setEditing({ ...editing, categoryId: e.target.value })}>
+                <option value="">Project root</option>
+                {categories
+                  .filter(category => category.projectId === editing.projectId)
+                  .map(category => {
+                    const depth = categoryBreadcrumbs(categories, category.id).length - 1;
+                    return <option key={category.id} value={category.id}>{'— '.repeat(depth)}{category.name}</option>;
+                  })}
               </select>
             </label>
             <div className="form-section">Targets</div>
@@ -447,6 +575,26 @@ export default function SyncListView({ config, onRefresh }) {
 
       {confirmDelete && (
         <ConfirmModal title="Delete Sync Item" message={`Delete "${confirmDelete.name}"? This cannot be undone.`} confirmLabel="Delete" onConfirm={doRemove} onCancel={() => setConfirmDelete(null)} />
+      )}
+
+      {editingCategory && (
+        <EditorModal title={editingCategory.id ? 'Edit Category' : 'New Category'} onClose={() => setEditingCategory(null)} onSave={saveCategory}>
+          <div className="form">
+            <label>Name
+              <input value={editingCategory.name} onChange={event => setEditingCategory({ ...editingCategory, name: event.target.value })} placeholder="Category name" />
+            </label>
+          </div>
+        </EditorModal>
+      )}
+
+      {confirmDeleteCategory && (
+        <ConfirmModal
+          title="Remove Category"
+          message={`Remove "${confirmDeleteCategory.name}"? Its sync items and subcategories will be moved up one level.`}
+          confirmLabel="Remove"
+          onConfirm={doRemoveCategory}
+          onCancel={() => setConfirmDeleteCategory(null)}
+        />
       )}
 
       {confirmClearHistory && (

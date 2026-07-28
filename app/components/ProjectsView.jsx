@@ -29,7 +29,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
     else next.push(editing);
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes, projects: next, items: config.items } })
+      body: JSON.stringify({ config: { remotes, projects: next, categories: config.categories, items: config.items } })
     });
     if (!r.ok) return toast('Failed to save.', 'error');
     setShowForm(false); onRefresh(); toast('Project saved.');
@@ -40,7 +40,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
     const next = projects.filter(p => p.id !== confirmDelete.id);
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes, projects: next, items: config.items } })
+      body: JSON.stringify({ config: { remotes, projects: next, categories: config.categories, items: config.items } })
     });
     if (!r.ok) return toast('Failed to delete.', 'error');
     setConfirmDelete(null); onRefresh(); toast('Project deleted.');
@@ -54,7 +54,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
     const nextRemotes = [...remotes, remote];
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes: nextRemotes, projects, items: config.items } })
+      body: JSON.stringify({ config: { remotes: nextRemotes, projects, categories: config.categories, items: config.items } })
     });
     if (!r.ok) return;
     setEditing({ ...editing, remoteId: id });

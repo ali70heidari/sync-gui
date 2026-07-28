@@ -9,7 +9,7 @@ import ImportModal from './components/ImportModal';
 
 export default function Page() {
   const [tab, setTab] = useState('items');
-  const [config, setConfig] = useState({ remotes: [], projects: [], items: [] });
+  const [config, setConfig] = useState({ remotes: [], projects: [], categories: [], items: [] });
   const [refreshKey, setRefreshKey] = useState(0);
   const [importAnalysis, setImportAnalysis] = useState(null);
   const fileInput = useRef(null);

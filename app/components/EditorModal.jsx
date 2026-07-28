@@ -9,8 +9,8 @@ export default function EditorModal({ title, children, onClose, onSave, saveLabe
   }, [onClose]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop">
+      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
         <header>
           <h2>{title}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>

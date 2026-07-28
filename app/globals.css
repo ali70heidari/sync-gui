@@ -699,6 +699,38 @@ label {
 .item-card:hover { border-color: rgba(37, 99, 235, .15); background: rgba(255, 255, 255, .95); }
 .item-card.file { border-left: 3px solid #3b82f6; }
 .item-card.folder { border-left: 3px solid #f59e0b; }
+.item-card.category-card {
+  border-left: 3px solid #8b5cf6;
+  cursor: pointer;
+}
+.item-card.category-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.category-summary {
+  color: var(--muted);
+  font-size: 12px;
+}
+.category-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.category-breadcrumbs span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.category-breadcrumbs button {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+}
+.category-breadcrumbs button:hover { background: var(--accent-soft); }
 
 .item-head {
   display: grid;

@@ -35,7 +35,7 @@ export default function RemotesView({ config, onBack, onRefresh }) {
     else next.push(editing);
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes: next, projects: config.projects, items: config.items } })
+      body: JSON.stringify({ config: { remotes: next, projects: config.projects, categories: config.categories, items: config.items } })
     });
     if (!r.ok) return toast('Failed to save.', 'error');
     setShowForm(false); onRefresh(); toast('Remote saved.');
@@ -48,7 +48,7 @@ export default function RemotesView({ config, onBack, onRefresh }) {
     const next = remotes.filter(r => r.id !== confirmDelete.id);
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { remotes: next, projects: config.projects, items: config.items } })
+      body: JSON.stringify({ config: { remotes: next, projects: config.projects, categories: config.categories, items: config.items } })
     });
     if (!r.ok) return toast('Failed to delete.', 'error');
     setConfirmDelete(null); onRefresh(); toast('Remote deleted.');

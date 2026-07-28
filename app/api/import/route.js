@@ -9,7 +9,7 @@ export async function POST(request) {
     if (!rawData) return NextResponse.json({ error: 'data is required' }, { status: 400 });
 
     // Normalize imported data: convert dest → targets
-    const data = { remotes: rawData.remotes || [], projects: rawData.projects || [], items: [] };
+    const data = { remotes: rawData.remotes || [], projects: rawData.projects || [], categories: rawData.categories || [], items: [] };
     for (const item of rawData.items || []) {
       if (item.dest && !item.targets) {
         const project = data.projects.find(p => p.id === item.projectId);
