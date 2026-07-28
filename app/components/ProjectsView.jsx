@@ -73,7 +73,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
           <h2>Projects</h2>
         </div>
         <div className="stage-actions">
-          <button className="primary" onClick={openNew}>+ New</button>
+          <button className="primary" onClick={openNew}>+ Add</button>
         </div>
       </div>
 

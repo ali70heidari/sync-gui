@@ -280,7 +280,7 @@ export default function SyncListView({ config, onRefresh }) {
               <button className="primary" onClick={() => handleSyncAll('down')} style={{ marginLeft: 4 }}>Sync All Down</button>
             </>
           )}
-          <button className="primary" onClick={openNew}>+ New</button>
+          <button className="primary" onClick={openNew}>+ Add</button>
         </div>
       </div>
 
@@ -289,7 +289,7 @@ export default function SyncListView({ config, onRefresh }) {
       {items.length === 0 ? (
         <div className="empty-state" style={{ padding: 48, fontSize: 15 }}>
           No sync items yet.
-          <br /><button className="primary" onClick={openNew} style={{ marginTop: 16 }}>+ Create your first sync</button>
+          <br /><button className="primary" onClick={openNew} style={{ marginTop: 16 }}>+ Add</button>
         </div>
       ) : paged.length === 0 ? (
         <p className="empty-state">No items match your search.</p>
