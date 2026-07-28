@@ -3,7 +3,8 @@
     {
       "id": "dummy-local",
       "name": "Dummy Local",
-      "kind": "local"
+      "kind": "local",
+      "root": "C:\\temp"
     }
   ],
   "projects": [
