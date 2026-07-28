@@ -40,9 +40,10 @@ function checkSsh(remote) {
       '-o BatchMode=no',
       '-o ConnectTimeout=5',
       '-o StrictHostKeyChecking=accept-new',
+      process.env.SYNC_GUI_KNOWN_HOSTS ? `-o UserKnownHostsFile=${shq(process.env.SYNC_GUI_KNOWN_HOSTS)}` : '',
       shq(`${remote.username}@${remote.host}`),
       shq('printf ok')
-    ].join(' ');
+    ].filter(Boolean).join(' ');
 
     const child = spawn(bash, ['-lc', `PATH=/usr/bin:$PATH\n${ssh}`], {
       cwd: process.cwd(),

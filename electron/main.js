@@ -42,6 +42,7 @@ if (app.isPackaged) {
       fs.mkdirSync(path.join(bundledRoot, 'home', 'sync-gui', '.ssh'), { recursive: true });
       process.env.SYNC_GUI_BASH = bundledBash;
       process.env.SYNC_GUI_DRIVE_PREFIX = '/cygdrive';
+      process.env.SYNC_GUI_KNOWN_HOSTS = '/home/sync-gui/.ssh/known_hosts';
       process.env.HOME = '/home/sync-gui';
       process.env.TMP = '/tmp';
       process.env.TEMP = '/tmp';
@@ -61,8 +62,8 @@ let mainWindow;
 
 nextApp.prepare().then(() => {
   const server = require('http').createServer(handle);
-  server.listen(3000, '0.0.0.0', () => {
-    const port = 3000;
+  server.listen(6137, '0.0.0.0', () => {
+    const port = 6137;
     mainWindow = new BrowserWindow({
       width: 1280,
       height: 860,
