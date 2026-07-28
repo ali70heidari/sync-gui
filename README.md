@@ -23,6 +23,7 @@ Direction (↑ upload / ↓ download) is chosen at sync time, not stored per ite
 - Live progress bar + console output during sync
 - In-memory job history (last 100 runs)
 - Runtime dependency check (bash, rsync, sshpass, ssh)
+- Project-local `.syncignore` files for excluding generated or dependency folders
 - Cross-platform: Linux, Windows (via MSYS2), macOS
 - Setup scripts automatically install dependencies
 
@@ -76,3 +77,21 @@ node --experimental-detect-module --test tests/api-test.mjs
 - `items[]` — `name`, `source`, `type` (file|folder), `projectId`, and `targets[]`
 - `targets[]` — `name`, `dest`, and `remoteIds[]`; legacy single `remoteId` still works
 - local item targets can capture path segments with ordinary tokens like `{project}` or `{name}` on the source side and reuse them on the destination side, for example `/usr/local/directadmin/data/users/{project}/nginx.conf` to `./{SERVER_NAME}/{project}_nginx.conf`. `{SERVER_NAME}` is always available and resolves to the selected remote/server name.
+
+## Ignoring Files
+
+Add a `.syncignore` file at the root of a synced folder. Put one pattern on each
+line; blank lines and lines beginning with `#` are ignored. Names match at any
+depth, while paths are relative to the synced folder. `*`, `**`, and `?` globs
+are supported.
+
+```gitignore
+node_modules/
+.git/
+dist/
+*.log
+```
+
+The `.syncignore` belongs to that sync item's local folder and is not copied.
+Its rules apply in both directions: uploads skip matching paths, while downloads
+do not overwrite or delete them.
