@@ -51,6 +51,7 @@ export default function SyncListView({ config, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmClearHistory, setConfirmClearHistory] = useState(false);
   const [output, setOutput] = useState('');
   const [status, setStatus] = useState('ready');
   const [history, setHistory] = useState([]);
@@ -83,9 +84,13 @@ export default function SyncListView({ config, onRefresh }) {
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
     };
   }, []);
   useEffect(() => {
@@ -103,6 +108,19 @@ export default function SyncListView({ config, onRefresh }) {
   async function loadHistory() {
     const r = await fetch('/api/history');
     if (r.ok) setHistory((await r.json()).history || []);
+  }
+
+  async function clearHistory() {
+    try {
+      const r = await fetch('/api/history', { method: 'DELETE' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Could not clear history.');
+      setHistory(data.history || []);
+      setConfirmClearHistory(false);
+      toast('History cleared.');
+    } catch (error) {
+      toast(error.message, 'error');
+    }
   }
 
   async function saveConfig(nextItems) {
@@ -308,20 +326,22 @@ export default function SyncListView({ config, onRefresh }) {
                     <button className="card-btn card-btn-del" onClick={() => removeItem(item.id)} title="Delete" aria-label="Delete">✕</button>
                   </div>
                 </div>
-                <div className="item-meta">
-                  <span className="group-tag">{project?.name || 'No project'}</span>
-                </div>
-                <div className="item-actions-bottom">
-                  <button className="btn-up" onClick={() => setSyncTargetPicker({ item, direction: 'up' })} title="Sync up" aria-label="Sync up">↑</button>
-                  <button className="btn-down" onClick={() => setSyncTargetPicker({ item, direction: 'down' })} title="Sync down" aria-label="Sync down">↓</button>
-                  <button
-                    className={`live-icon ${liveEnabled ? 'active' : ''}`}
-                    onClick={() => toggleLiveSync(item.id)}
-                    title={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
-                    aria-label={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
-                  >
-                    L
-                  </button>
+                <div className="item-footer">
+                  <div className="item-meta">
+                    <span className="group-tag">{project?.name || 'No project'}</span>
+                  </div>
+                  <div className="item-actions-bottom">
+                    <button className="btn-up" onClick={() => setSyncTargetPicker({ item, direction: 'up' })} title="Sync up" aria-label="Sync up">↑</button>
+                    <button className="btn-down" onClick={() => setSyncTargetPicker({ item, direction: 'down' })} title="Sync down" aria-label="Sync down">↓</button>
+                    <button
+                      className={`live-icon ${liveEnabled ? 'active' : ''}`}
+                      onClick={() => toggleLiveSync(item.id)}
+                      title={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
+                      aria-label={liveEnabled ? 'Disable live sync (10s)' : 'Enable live sync (10s)'}
+                    >
+                      L
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -351,6 +371,7 @@ export default function SyncListView({ config, onRefresh }) {
         <div className="side-panel" style={{ marginTop: 16 }}>
           <div className="side-panel-head">
             <span className="tab active">Recent Jobs</span>
+            <button className="history-clear" onClick={() => setConfirmClearHistory(true)}>Clear history</button>
           </div>
           {history.slice(0, 15).map(j => (
             <div key={j.id} className={`history-item-mini ${j.status}`} onClick={() => { setOutput(j.output || ''); setStatus(j.status === 'succeeded' ? 'done' : 'failed'); }}>
@@ -426,6 +447,10 @@ export default function SyncListView({ config, onRefresh }) {
 
       {confirmDelete && (
         <ConfirmModal title="Delete Sync Item" message={`Delete "${confirmDelete.name}"? This cannot be undone.`} confirmLabel="Delete" onConfirm={doRemove} onCancel={() => setConfirmDelete(null)} />
+      )}
+
+      {confirmClearHistory && (
+        <ConfirmModal title="Clear Job History" message="Clear all completed jobs from history?" confirmLabel="Clear history" onConfirm={clearHistory} onCancel={() => setConfirmClearHistory(false)} />
       )}
     </div>
   );
