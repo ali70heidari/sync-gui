@@ -60,8 +60,8 @@ let mainWindow;
 
 nextApp.prepare().then(() => {
   const server = require('http').createServer(handle);
-  server.listen(6137, '0.0.0.0', () => {
-    const port = 6137;
+  server.listen(49173, '0.0.0.0', () => {
+    const port = 49173;
     mainWindow = new BrowserWindow({
       width: 1280,
       height: 860,

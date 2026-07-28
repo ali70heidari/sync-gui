@@ -8,9 +8,9 @@
     "url": "https://github.com/hamidrg20001379/sync-gui-public.git"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --webpack --port 49173",
     "build": "next build --webpack",
-    "start": "next start",
+    "start": "next start --port 49173",
     "electron": "electron .",
     "electron:dev": "electron .",
     "dist": "npm run build && node scripts/package.js",
