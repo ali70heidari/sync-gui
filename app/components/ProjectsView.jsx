@@ -13,7 +13,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [showNewRemote, setShowNewRemote] = useState(false);
-  const [newRemote, setNewRemote] = useState({ name: '', kind: 'ssh', host: '', port: 22, username: '', password: '' });
+  const [newRemote, setNewRemote] = useState({ name: '', kind: 'ssh', root: '', host: '', port: 22, username: '', password: '' });
   const [showNewPass, setShowNewPass] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
@@ -22,7 +22,6 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
 
   async function save() {
     if (!editing.name) return toast('Name is required.', 'error');
-    if (!editing.remoteId) return toast('Select a remote.', 'error');
     const idx = projects.findIndex(p => p.id === editing.id);
     const next = [...projects];
     if (!editing.id) editing.id = editing.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
@@ -49,8 +48,9 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
 
   async function createRemoteAndUse() {
     if (!newRemote.name) return;
+    if (newRemote.kind === 'local' && !newRemote.root?.trim()) return toast('Root path is required for local remotes.', 'error');
     const id = newRemote.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
-    const remote = { ...(newRemote.kind === 'local' ? { kind: 'local' } : newRemote), id };
+    const remote = { ...newRemote, id };
     const nextRemotes = [...remotes, remote];
     const r = await fetch('/api/config', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -59,7 +59,7 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
     if (!r.ok) return;
     setEditing({ ...editing, remoteId: id });
     setShowNewRemote(false);
-    setNewRemote({ name: '', kind: 'ssh', host: '', port: 22, username: '', password: '' });
+    setNewRemote({ name: '', kind: 'ssh', root: '', host: '', port: 22, username: '', password: '' });
     onRefresh(); toast('Remote created.');
   }
 
@@ -90,8 +90,8 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
                 <div className="card-main">
                   <h3>{p.name}</h3>
                   <div className="remote-kind-badge">
-                    <span className={`badge badge-${r?.kind || 'ssh'}`}>{r?.kind || 'ssh'}</span>
-                    <span className="remote-label">{r?.name || '?'}</span>
+                    {r && <span className={`badge badge-${r.kind}`}>{r.kind}</span>}
+                    <span className="remote-label">{r?.name || 'No default remote'}</span>
                   </div>
                   <div className="stats">
                     <span>{config.items.filter(i => i.projectId === p.id).length} item(s)</span>
@@ -111,10 +111,11 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
         <EditorModal title={editing.id ? 'Edit Project' : 'New Project'} onClose={() => setShowForm(false)} onSave={save}>
           <div className="form">
             <label>Name <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="My Project" /></label>
-            <label>Remote
+            <label>Default remote (optional)
               <select value={editing.remoteId} onChange={e => {
                 setEditing({ ...editing, remoteId: e.target.value });
                 if (e.target.value === '__new__') setShowNewRemote(true);
+                else setShowNewRemote(false);
               }}>
                 <option value="">— Select —</option>
                 {remotes.map(r => <option key={r.id} value={r.id}>{r.name} ({r.kind})</option>)}
@@ -144,6 +145,15 @@ export default function ProjectsView({ config, onBack, onRefresh }) {
                       </div>
                     </label>
                   </>
+                )}
+                {newRemote.kind === 'local' && (
+                  <label>Root path
+                    <input
+                      value={newRemote.root || ''}
+                      onChange={e => setNewRemote({ ...newRemote, root: e.target.value })}
+                      placeholder={'C:\\Users\\name\\folder or /home/name/folder'}
+                    />
+                  </label>
                 )}
                 <button className="primary" onClick={createRemoteAndUse} style={{ justifySelf: 'start' }}>Create & Use</button>
               </div>

@@ -5,7 +5,7 @@ import ConfirmModal from './ConfirmModal';
 import { toast } from './Toast';
 
 function blankRemote() {
-  return { id: '', name: '', kind: 'ssh', host: '', port: 22, username: '', password: '' };
+  return { id: '', name: '', kind: 'ssh', root: '', host: '', port: 22, username: '', password: '' };
 }
 
 export default function RemotesView({ config, onBack, onRefresh }) {
@@ -21,10 +21,16 @@ export default function RemotesView({ config, onBack, onRefresh }) {
   async function save() {
     if (!editing.name) return toast('Name is required.', 'error');
     if (editing.kind === 'ssh' && !editing.host) return toast('Host is required for SSH.', 'error');
+    if (editing.kind === 'local' && !editing.root?.trim()) return toast('Root path is required for local remotes.', 'error');
     const idx = remotes.findIndex(r => r.id === editing.id);
     const next = [...remotes];
     if (!editing.id) editing.id = editing.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
-    if (editing.kind === 'local') editing.host = ''; editing.port = 22; editing.username = ''; editing.password = '';
+    if (editing.kind === 'local') {
+      editing.host = '';
+      editing.port = 22;
+      editing.username = '';
+      editing.password = '';
+    }
     if (idx >= 0) next[idx] = editing;
     else next.push(editing);
     const r = await fetch('/api/config', {
@@ -129,6 +135,15 @@ export default function RemotesView({ config, onBack, onRefresh }) {
                   </div>
                 </label>
               </>
+            )}
+            {editing.kind === 'local' && (
+              <label>Root path
+                <input
+                  value={editing.root || ''}
+                  onChange={e => setEditing({ ...editing, root: e.target.value })}
+                  placeholder={'C:\\Users\\name\\folder or /home/name/folder'}
+                />
+              </label>
             )}
           </div>
         </EditorModal>

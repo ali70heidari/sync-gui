@@ -138,7 +138,6 @@ export default function SyncListView({ config, onRefresh }) {
   function save() {
     if (!editing.name) { toast('Name is required.', 'error'); return; }
     if (!editing.source) { toast('Source path is required.', 'error'); return; }
-    if (!editing.projectId) { toast('Select a project.', 'error'); return; }
     const validTargets = (editing.targets || [])
       .filter(t => t.dest && (t.remoteIds?.length || t.remoteId))
       .map(t => ({
@@ -310,7 +309,7 @@ export default function SyncListView({ config, onRefresh }) {
                   </div>
                 </div>
                 <div className="item-meta">
-                  <span className="group-tag">{project?.name || '?'}</span>
+                  <span className="group-tag">{project?.name || 'No project'}</span>
                 </div>
                 <div className="item-actions-bottom">
                   <button className="btn-up" onClick={() => setSyncTargetPicker({ item, direction: 'up' })} title="Sync up" aria-label="Sync up">↑</button>
@@ -386,9 +385,9 @@ export default function SyncListView({ config, onRefresh }) {
                 <option value="file">File</option>
               </select>
             </label>
-            <label>Project
+            <label>Project (optional)
               <select value={editing.projectId} onChange={e => setEditing({ ...editing, projectId: e.target.value })}>
-                <option value="">Select</option>
+                <option value="">None</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
