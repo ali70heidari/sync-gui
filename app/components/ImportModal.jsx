@@ -26,9 +26,9 @@ export default function ImportModal({ analysis, onApply, onClose }) {
       projects: {},
       items: {},
     };
-    for (const r of analysis.remotes) resolutions.remotes[r.imported.name] = remotesRes[r.imported.name] || { action: 'replace' };
-    for (const p of analysis.projects) resolutions.projects[p.imported.name] = projectsRes[p.imported.name] || { action: 'replace' };
-    for (const item of analysis.items) {
+    for (const r of analysis.remotes.filter(r => r.conflict)) resolutions.remotes[r.imported.name] = remotesRes[r.imported.name] || { action: 'replace' };
+    for (const p of analysis.projects.filter(p => p.conflict)) resolutions.projects[p.imported.name] = projectsRes[p.imported.name] || { action: 'replace' };
+    for (const item of analysis.items.filter(item => item.conflict)) {
       const key = itemKey(item);
       resolutions.items[key] = itemsRes[key] || { action: 'replace' };
     }
