@@ -167,15 +167,32 @@ function copyApp() {
     relative === 'electron' ||
     relative.startsWith('electron/')
   ));
+
+  if (process.platform === 'win32') {
+    const toolsSource = path.join(root, 'vendor', 'win-tools', 'usr', 'bin');
+    const toolsTarget = path.join(appDir, 'vendor', 'win-tools', 'usr', 'bin');
+    if (!fs.existsSync(toolsSource)) {
+      throw new Error(`Bundled Windows tools are missing: ${toolsSource}`);
+    }
+    fs.cpSync(toolsSource, toolsTarget, { recursive: true });
+    fs.mkdirSync(path.join(appDir, 'vendor', 'win-tools', 'tmp'), { recursive: true });
+    fs.mkdirSync(path.join(appDir, 'vendor', 'win-tools', 'home', 'sync-gui', '.ssh'), { recursive: true });
+  }
 }
 
 function selfCheck() {
-  for (const required of [
+  const requiredFiles = [
     executablePath,
     path.join(appDir, 'electron', 'main.js'),
     path.join(appDir, '.next', 'BUILD_ID'),
     path.join(appDir, 'node_modules', 'next', 'package.json')
-  ]) {
+  ];
+  if (process.platform === 'win32') {
+    for (const tool of ['bash.exe', 'rsync.exe', 'ssh.exe', 'sshpass.exe']) {
+      requiredFiles.push(path.join(appDir, 'vendor', 'win-tools', 'usr', 'bin', tool));
+    }
+  }
+  for (const required of requiredFiles) {
     if (!fs.existsSync(required)) {
       throw new Error(`Package self-check failed: ${required}`);
     }

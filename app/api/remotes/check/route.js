@@ -44,7 +44,7 @@ function checkSsh(remote) {
       shq('printf ok')
     ].join(' ');
 
-    const child = spawn(bash, ['-lc', ssh], {
+    const child = spawn(bash, ['-lc', `PATH=/usr/bin:$PATH\n${ssh}`], {
       cwd: process.cwd(),
       env: { ...process.env, SSHPASS: remote.password || '' },
       windowsHide: true,

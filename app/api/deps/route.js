@@ -26,7 +26,7 @@ export async function GET() {
     if (msys2) {
       try {
         const out = await new Promise((resolve, reject) => {
-          exec(`"${msys2Bash}" -lc "command -v bash rsync sshpass ssh"`, { timeout: 5000 }, (err, stdout) => {
+          exec(`"${msys2Bash}" -lc "PATH=/usr/bin; command -v bash rsync sshpass ssh"`, { timeout: 5000 }, (err, stdout) => {
             if (err) reject(err); else resolve(stdout);
           });
         });

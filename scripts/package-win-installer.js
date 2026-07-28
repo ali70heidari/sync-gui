@@ -19,7 +19,8 @@ function findIscc() {
   } catch {
     const candidates = [
       path.join(process.env['ProgramFiles(x86)'] || '', 'Inno Setup 6', 'ISCC.exe'),
-      path.join(process.env.ProgramFiles || '', 'Inno Setup 6', 'ISCC.exe')
+      path.join(process.env.ProgramFiles || '', 'Inno Setup 6', 'ISCC.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Inno Setup 6', 'ISCC.exe')
     ];
     const found = candidates.find((candidate) => candidate && fs.existsSync(candidate));
     if (found) return found;
@@ -57,8 +58,8 @@ DefaultDirName={localappdata}\\Programs\\${productName}
 DefaultGroupName={#MyAppName}
 OutputDir=${issQuote(distDir)}
 OutputBaseFilename=${installerName}
-Compression=lzma2
-SolidCompression=yes
+Compression=lzma2/fast
+SolidCompression=no
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 

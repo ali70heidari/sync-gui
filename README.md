@@ -52,6 +52,10 @@ One-command dependency install + app launch:
 | Linux | `bash scripts/setup-linux.sh` |
 | Windows | `powershell -File scripts/setup-win.ps1` |
 
+The Windows `.exe` installer includes its own Bash, rsync, OpenSSH, and sshpass
+runtime. End users do not need to install MSYS2 separately. `setup-win.ps1` is
+only needed when running the unpackaged source directly on Windows.
+
 ## Build
 
 ```bash
