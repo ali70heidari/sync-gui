@@ -1,4 +1,5 @@
 'use client';
+import { X } from '@phosphor-icons/react';
 
 export default function TargetPicker({ item, remotes, direction, onStart, onClose }) {
   const targets = item.targets || [];
@@ -27,7 +28,7 @@ export default function TargetPicker({ item, remotes, direction, onStart, onClos
         onKeyDown={e => e.key === 'Escape' && onClose()} tabIndex={-1}>
         <header>
           <h2>{direction === 'up' ? 'Upload targets' : 'Download target'}</h2>
-          <button className="modal-close" onClick={onClose}>&times;</button>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </header>
         <form onSubmit={handleForm}>
           <div className="modal-body">

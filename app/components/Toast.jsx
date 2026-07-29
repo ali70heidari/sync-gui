@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { CheckCircle, XCircle } from '@phosphor-icons/react';
 
 let toastId = 0;
 let addToastFn = null;
@@ -24,6 +25,7 @@ export default function ToastContainer() {
     <div className="toast-container">
       {items.map(i => (
         <div key={i.id} className={`toast toast-${i.type}`} onClick={() => setItems(prev => prev.filter(x => x.id !== i.id))}>
+          {i.type === 'info' ? <CheckCircle size={14} weight="fill" /> : <XCircle size={14} weight="fill" />}
           {i.msg}
         </div>
       ))}

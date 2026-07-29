@@ -19,6 +19,7 @@
     "installer:linux": "node scripts/package-linux-appimage.js"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"

@@ -1,5 +1,6 @@
 ﻿'use client';
 import { useState, useEffect, useRef } from 'react';
+import { ArrowsLeftRight, FolderOpen, ComputerTower, Upload, Download } from '@phosphor-icons/react';
 import SyncListView from './components/SyncListView';
 import ProjectsView from './components/ProjectsView';
 import RemotesView from './components/RemotesView';
@@ -51,7 +52,7 @@ export default function Page() {
         const analysis = await r.json();
         analysis._importData = data;
         setImportAnalysis(analysis);
-      } catch { /* invalid JSON */ }
+      } catch { }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -70,17 +71,32 @@ export default function Page() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div>
-          <h1>Sync GUI</h1>
-          <p className="subtitle">File synchronization</p>
+        <div className="topbar-brand">
+          <div className="topbar-brand-icon">
+            <ArrowsLeftRight size={18} weight="bold" />
+          </div>
+          <div>
+            <h1>Sync GUI</h1>
+            <p className="subtitle">File synchronization</p>
+          </div>
         </div>
         <div className="top-actions">
-          <button className={tab === 'items' ? 'primary' : ''} onClick={() => setTab('items')}>Sync Items</button>
-          <button className={tab === 'projects' ? 'primary' : ''} onClick={() => setTab('projects')}>Projects</button>
-          <button className={tab === 'remotes' ? 'primary' : ''} onClick={() => setTab('remotes')}>Remotes</button>
+          <button className={`topbar-tab ${tab === 'items' ? 'active' : ''}`} onClick={() => setTab('items')}>
+            <ArrowsLeftRight size={14} /> Sync Items
+          </button>
+          <button className={`topbar-tab ${tab === 'projects' ? 'active' : ''}`} onClick={() => setTab('projects')}>
+            <FolderOpen size={14} /> Projects
+          </button>
+          <button className={`topbar-tab ${tab === 'remotes' ? 'active' : ''}`} onClick={() => setTab('remotes')}>
+            <ComputerTower size={14} /> Remotes
+          </button>
           <div className="topbar-divider" />
-          <button className="topbar-btn" onClick={handleExport}>Export</button>
-          <button className="topbar-btn" onClick={() => fileInput.current?.click()}>Import</button>
+          <button className="topbar-btn" onClick={handleExport}>
+            <Upload size={13} /> Export
+          </button>
+          <button className="topbar-btn" onClick={() => fileInput.current?.click()}>
+            <Download size={13} /> Import
+          </button>
           <input ref={fileInput} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportPick} />
         </div>
       </header>

@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { X } from '@phosphor-icons/react';
 
 export default function ImportModal({ analysis, onApply, onClose }) {
   const [remotesRes, setRemotesRes] = useState({});
@@ -41,7 +42,7 @@ export default function ImportModal({ analysis, onApply, onClose }) {
         onKeyDown={e => e.key === 'Escape' && onClose()} tabIndex={-1}>
         <header>
           <h2>Import configuration</h2>
-          <button className="modal-close" onClick={onClose}>&times;</button>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </header>
         <div className="modal-body">
           <div className="import-summary">
@@ -91,7 +92,7 @@ export default function ImportModal({ analysis, onApply, onClose }) {
                 return (
                   <ConflictRow key={k}
                     label={i.imported.name}
-                    sub={`in project "${i.projectName}"`}
+                    sub={'in project "' + i.projectName + '"'}
                     imported={<span>{i.imported.source} &rarr; {i.imported.dest}</span>}
                     existing={<span>{i.existing?.source} &rarr; {i.existing?.dest}</span>}
                     value={itemsRes[k] || {}}
