@@ -1,11 +1,15 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Plus, CaretUp, CaretDown, Gear, X, MagnifyingGlass, Play, Lightning, ClockCounterClockwise } from "@phosphor-icons/react";
+import { Plus, CaretUp, CaretDown, Gear, X, Lightning, ClockCounterClockwise, Copy } from "@phosphor-icons/react";
 import EditorModal from "./EditorModal";
 import ConfirmModal from "./ConfirmModal";
 import TargetPicker from "./TargetPicker";
 import { toast } from "./Toast";
 import { buildItemTargetMap, pickDueLiveItem } from "../../lib/live-sync";
+import {
+  categoryBreadcrumbs,
+  removeCategory,
+} from "../../lib/categories";
 
 const PAGE_SIZE = 30;
 const LS_KEY = "sync-gui-settings";
@@ -17,6 +21,7 @@ function blankItem() {
     source: "",
     type: "folder",
     projectId: "",
+    categoryId: "",
     targets: [{ name: "", remoteIds: [], dest: "", variables: {} }],
   };
 }
@@ -55,13 +60,37 @@ function describeJob(job, items) {
   return `${names[0]} + ${names.length - 1} more`;
 }
 
+function isCategoryDescendant(categories, categoryId, possibleDescendantId) {
+  let current = categories.find((category) => category.id === possibleDescendantId);
+  const seen = new Set();
+  while (current && !seen.has(current.id)) {
+    if (current.parentId === categoryId) return true;
+    seen.add(current.id);
+    current = categories.find((category) => category.id === current.parentId);
+  }
+  return false;
+}
+
+function cloneName(name, existingNames) {
+  const base = `${name} copy`;
+  if (!existingNames.includes(base)) return base;
+  for (let index = 2; ; index += 1) {
+    const candidate = `${base} ${index}`;
+    if (!existingNames.includes(candidate)) return candidate;
+  }
+}
+
 export default function SyncListView({ config, onRefresh }) {
-  const { items = [], projects = [], remotes = [] } = config;
+  const { items = [], projects = [], remotes = [], categories = [] } = config;
   const [search, setSearch] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
+  const [currentCategoryId, setCurrentCategoryId] = useState("");
   const [page, setPage] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [categoryDraft, setCategoryDraft] = useState(null);
+  const [confirmCategoryDelete, setConfirmCategoryDelete] = useState(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
   const [output, setOutput] = useState("");
@@ -69,6 +98,7 @@ export default function SyncListView({ config, onRefresh }) {
   const [history, setHistory] = useState([]);
   const [syncingIds, setSyncingIds] = useState([]);
   const [syncTargetPicker, setSyncTargetPicker] = useState(null);
+  const [targetDraft, setTargetDraft] = useState(null);
   const [liveItemIds, setLiveItemIds] = useState(() => {
     if (typeof window === "undefined") return [];
     return JSON.parse(localStorage.getItem(LS_KEY) || "{}").liveItemIds || [];
@@ -156,11 +186,19 @@ export default function SyncListView({ config, onRefresh }) {
     }
   }
 
-  async function saveConfig(nextItems) {
+  useEffect(() => {
+    if (!currentCategoryId) return;
+    if (categories.some((category) => category.id === currentCategoryId)) return;
+    setCurrentCategoryId("");
+  }, [categories, currentCategoryId]);
+
+  async function saveConfig(nextItems, nextCategories = categories) {
     const r = await fetch("/api/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { remotes, projects, items: nextItems } }),
+      body: JSON.stringify({
+        config: { remotes, projects, categories: nextCategories, items: nextItems },
+      }),
     });
     if (!r.ok) {
       const d = await r.json();
@@ -169,11 +207,22 @@ export default function SyncListView({ config, onRefresh }) {
     onRefresh();
   }
 
-  function openNew() {
+  function openNew(categoryId = currentCategoryId) {
+    const category = categories.find((candidate) => candidate.id === categoryId);
     setEditing({
       ...blankItem(),
+      projectId: category ? category.projectId : projectFilter,
+      categoryId,
+      localSyncIgnoreText: "",
       targets: [
-        { name: "", remoteIds: [], dest: "", variables: {}, variablesText: "" },
+        {
+          name: "",
+          remoteIds: [],
+          dest: "",
+          variables: {},
+          variablesText: "",
+          remoteSyncIgnoreText: "",
+        },
       ],
     });
     setShowForm(true);
@@ -182,6 +231,7 @@ export default function SyncListView({ config, onRefresh }) {
   function openEdit(item) {
     setEditing({
       ...item,
+      localSyncIgnoreText: item.localSyncIgnore || "",
       targets: (item.targets || []).map((t) => ({
         ...t,
         remoteIds: t.remoteIds?.length
@@ -189,9 +239,197 @@ export default function SyncListView({ config, onRefresh }) {
           : [t.remoteId].filter(Boolean),
         variables: t.variables || {},
         variablesText: formatVariablesInput(t.variables || {}),
+        remoteSyncIgnoreText: t.remoteSyncIgnore || "",
       })),
     });
     setShowForm(true);
+  }
+
+  function openCategoryEditor(category = null) {
+    setCategoryDraft(
+      category
+        ? { ...category }
+        : {
+            id: "",
+            name: "",
+            projectId: projectFilter,
+            parentId: currentCategoryId,
+          },
+    );
+  }
+
+  function saveCategoryDraft() {
+    const name = categoryDraft.name.trim();
+    if (!name) {
+      toast("Category name is required.", "error");
+      return;
+    }
+    if (
+      categoryDraft.id &&
+      isCategoryDescendant(categories, categoryDraft.id, categoryDraft.parentId)
+    ) {
+      toast("A category cannot be moved inside itself.", "error");
+      return;
+    }
+    const id =
+      categoryDraft.id ||
+      name.toLowerCase().replace(/[^a-z0-9]+/g, "-") +
+        "-" +
+        Date.now().toString(36);
+    const saved = { ...categoryDraft, id, name };
+    const nextCategories = [...categories];
+    const idx = nextCategories.findIndex((category) => category.id === id);
+    if (idx >= 0) nextCategories[idx] = saved;
+    else nextCategories.push(saved);
+    saveConfig(items, nextCategories)
+      .then(() => {
+        setCategoryDraft(null);
+        toast("Category saved.");
+      })
+      .catch((e) => toast(e.message, "error"));
+  }
+
+  function openCategory(category) {
+    setProjectFilter(category.projectId || "");
+    setCurrentCategoryId(category.id);
+    setPage(0);
+  }
+
+  function doRemoveCategory() {
+    const next = removeCategory(categories, items, confirmCategoryDelete.id);
+    saveConfig(next.items, next.categories)
+      .then(() => {
+        setConfirmCategoryDelete(null);
+        toast("Category deleted.");
+      })
+      .catch((e) => toast(e.message, "error"));
+  }
+
+  function cloneCategory(category) {
+    const siblingNames = categories
+      .filter((candidate) =>
+        candidate.projectId === category.projectId &&
+        (candidate.parentId || "") === (category.parentId || ""),
+      )
+      .map((candidate) => candidate.name);
+    const copy = {
+      ...category,
+      id: `c-${Date.now().toString(36)}`,
+      name: cloneName(category.name, siblingNames),
+    };
+    saveConfig(items, [...categories, copy])
+      .then(() => toast(`Cloned "${category.name}".`))
+      .catch((e) => toast(e.message, "error"));
+  }
+
+  function cloneItem(item) {
+    const siblingNames = items
+      .filter((candidate) =>
+        candidate.projectId === item.projectId &&
+        (candidate.categoryId || "") === (item.categoryId || ""),
+      )
+      .map((candidate) => candidate.name);
+    const copy = {
+      ...item,
+      id: `${item.id || "item"}-copy-${Date.now().toString(36)}`,
+      name: cloneName(item.name, siblingNames),
+      targets: (item.targets || []).map((target) => ({ ...target })),
+    };
+    saveConfig([...items, copy])
+      .then(() => toast(`Cloned "${item.name}".`))
+      .catch((e) => toast(e.message, "error"));
+  }
+
+  function moveItemToCategory(itemId, categoryId) {
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item || (item.categoryId || "") === categoryId) return;
+    const category = categories.find((candidate) => candidate.id === categoryId);
+    if (categoryId && !category) return;
+    const projectId = categoryId ? category.projectId : projectFilter;
+    const nextItems = items.map((candidate) =>
+      candidate.id === itemId
+        ? { ...candidate, projectId, categoryId }
+        : candidate,
+    );
+    saveConfig(nextItems)
+      .then(() => toast(categoryId ? `Moved to "${category.name}".` : "Moved to root."))
+      .catch((e) => toast(e.message, "error"));
+  }
+
+  function dragItem(e, item) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", item.id);
+  }
+
+  function allowItemDrop(e, categoryId) {
+    if (!e.dataTransfer.types.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverCategoryId(categoryId);
+  }
+
+  function dropItem(e, categoryId) {
+    e.preventDefault();
+    const itemId = e.dataTransfer.getData("text/plain");
+    setDragOverCategoryId(null);
+    moveItemToCategory(itemId, categoryId);
+  }
+
+  function openTargetEditor(index = null) {
+    const target =
+      index === null
+        ? {
+            name: "",
+            remoteIds: [],
+            dest: "",
+            variables: {},
+            variablesText: "",
+            remoteSyncIgnoreText: "",
+          }
+        : editing.targets[index];
+    setTargetDraft({ index, target: { ...target } });
+  }
+
+  function updateTargetDraft(patch) {
+    setTargetDraft((current) => ({
+      ...current,
+      target: { ...current.target, ...patch },
+    }));
+  }
+
+  function toggleDraftRemote(remoteId, checked) {
+    const current = new Set(
+      targetDraft.target.remoteIds?.length
+        ? targetDraft.target.remoteIds
+        : [targetDraft.target.remoteId].filter(Boolean),
+    );
+    if (checked) current.add(remoteId);
+    else current.delete(remoteId);
+    updateTargetDraft({ remoteIds: [...current], remoteId: undefined });
+  }
+
+  function saveTargetDraft() {
+    const target = targetDraft.target;
+    if (!target.dest) {
+      toast("Destination path is required.", "error");
+      return;
+    }
+    if (!(target.remoteIds?.length || target.remoteId)) {
+      toast("At least one remote is required.", "error");
+      return;
+    }
+    const targets = [...(editing.targets || [])];
+    if (targetDraft.index === null) targets.push(target);
+    else targets[targetDraft.index] = target;
+    setEditing({ ...editing, targets });
+    setTargetDraft(null);
+  }
+
+  function removeTarget(index) {
+    setEditing({
+      ...editing,
+      targets: editing.targets.filter((_, targetIndex) => targetIndex !== index),
+    });
   }
 
   function save() {
@@ -212,6 +450,7 @@ export default function SyncListView({ config, onRefresh }) {
           ? t.remoteIds
           : [t.remoteId].filter(Boolean),
         variables: parseVariablesInput(t.variablesText || ""),
+        remoteSyncIgnore: t.remoteSyncIgnoreText || "",
       }));
     if (!validTargets.length) {
       toast(
@@ -227,7 +466,13 @@ export default function SyncListView({ config, onRefresh }) {
       editing.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") +
         "-" +
         Date.now().toString(36);
-    const saved = { ...editing, id: itemId, targets: validTargets };
+    const { localSyncIgnoreText, ...itemDraft } = editing;
+    const saved = {
+      ...itemDraft,
+      id: itemId,
+      localSyncIgnore: localSyncIgnoreText || "",
+      targets: validTargets,
+    };
     if (idx >= 0) next[idx] = saved;
     else next.push(saved);
     saveConfig(next)
@@ -333,21 +578,16 @@ export default function SyncListView({ config, onRefresh }) {
     }, 1000);
   }
 
-  function toggleTargetRemote(targetIndex, remoteId, checked) {
-    const ts = [...editing.targets];
-    const current = new Set(
-      ts[targetIndex].remoteIds?.length
-        ? ts[targetIndex].remoteIds
-        : [ts[targetIndex].remoteId].filter(Boolean),
-    );
-    if (checked) current.add(remoteId);
-    else current.delete(remoteId);
-    ts[targetIndex] = { ...ts[targetIndex], remoteIds: [...current] };
-    delete ts[targetIndex].remoteId;
-    setEditing({ ...editing, targets: ts });
-  }
-
   const q = search.toLowerCase();
+  const searching = Boolean(q);
+  const breadcrumbs = categoryBreadcrumbs(categories, currentCategoryId);
+  const visibleCategories = searching
+    ? []
+    : categories.filter(
+        (category) =>
+          (!projectFilter || category.projectId === projectFilter) &&
+          (category.parentId || "") === currentCategoryId,
+      );
   const filtered = items.filter((i) => {
     if (
       q &&
@@ -356,10 +596,15 @@ export default function SyncListView({ config, onRefresh }) {
     )
       return false;
     if (projectFilter && i.projectId !== projectFilter) return false;
+    if (!searching && (i.categoryId || "") !== currentCategoryId) return false;
     return true;
   });
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const visibleEntries = [...visibleCategories, ...filtered];
+  const totalPages = Math.ceil(visibleEntries.length / PAGE_SIZE) || 1;
+  const pagedEntries = visibleEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const categoryOptions = categories.filter(
+    (category) => category.projectId === editing?.projectId,
+  );
 
   return (
     <div className="stage">
@@ -383,6 +628,7 @@ export default function SyncListView({ config, onRefresh }) {
               value={projectFilter}
               onChange={(e) => {
                 setProjectFilter(e.target.value);
+                setCurrentCategoryId("");
                 setPage(0);
               }}
             >
@@ -426,6 +672,11 @@ export default function SyncListView({ config, onRefresh }) {
               </button>
             </>
           )}
+          {!searching && (
+            <button onClick={() => openCategoryEditor()}>
+              <Plus size={14} weight="bold" /> Category
+            </button>
+          )}
           <button className="primary" onClick={openNew}>
             <Plus size={14} weight="bold" /> Add
           </button>
@@ -438,7 +689,29 @@ export default function SyncListView({ config, onRefresh }) {
         </div>
       )}
 
-      {items.length === 0 ? (
+      {!searching && (currentCategoryId || breadcrumbs.length > 0) && (
+        <div className="category-breadcrumbs">
+          <button
+            className={dragOverCategoryId === "" ? "drop-active" : ""}
+            onClick={() => setCurrentCategoryId("")}
+            onDragOver={(e) => allowItemDrop(e, "")}
+            onDragLeave={() => setDragOverCategoryId(null)}
+            onDrop={(e) => dropItem(e, "")}
+          >
+            Root
+          </button>
+          {breadcrumbs.map((category) => (
+            <span key={category.id}>
+              /
+              <button onClick={() => setCurrentCategoryId(category.id)}>
+                {category.name}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {items.length === 0 && categories.length === 0 ? (
         <div className="empty-state">
           No sync items yet.
           <br />
@@ -446,21 +719,134 @@ export default function SyncListView({ config, onRefresh }) {
             <Plus size={14} weight="bold" /> Add your first item
           </button>
         </div>
-      ) : paged.length === 0 ? (
-        <p className="empty-state">No items match your search.</p>
+      ) : pagedEntries.length === 0 ? (
+        <div className="empty-state">
+          {searching ? "No items match your search." : "No items in this category."}
+          {!searching && (
+            <>
+              <br />
+              <button className="primary" onClick={() => openNew()} style={{ marginTop: 16 }}>
+                <Plus size={14} weight="bold" /> Add sync item here
+              </button>
+            </>
+          )}
+        </div>
       ) : (
         <div className="item-list">
-          {paged.map((item) => {
+          {pagedEntries.map((entry) => {
+            if ("parentId" in entry) {
+              const childCategories = categories.filter(
+                (category) => category.parentId === entry.id,
+              ).length;
+              const childItems = items.filter(
+                (item) => item.categoryId === entry.id,
+              ).length;
+              const project = resolveProject(entry.projectId, projects);
+              return (
+                <div
+                  key={`category-${entry.id}`}
+                  className={`item-card category-card ${dragOverCategoryId === entry.id ? "drop-active" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openCategory(entry)}
+                  onDragOver={(e) => allowItemDrop(e, entry.id)}
+                  onDragLeave={() => setDragOverCategoryId(null)}
+                  onDrop={(e) => {
+                    e.stopPropagation();
+                    dropItem(e, entry.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") openCategory(entry);
+                  }}
+                >
+                  <div className="item-head">
+                    <span className="type-icon" aria-hidden="true">[+]</span>
+                    <span className="item-name">{entry.name}</span>
+                    <div className="item-actions">
+                      <button
+                        className="card-btn card-btn-add"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openNew(entry.id);
+                        }}
+                        title="Add sync item here"
+                        aria-label="Add sync item here"
+                      >
+                        <Plus size={14} />
+                      </button>
+                      <button
+                        className="card-btn card-btn-copy"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cloneCategory(entry);
+                        }}
+                        title="Clone category"
+                        aria-label="Clone category"
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        className="card-btn card-btn-edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCategoryEditor(entry);
+                        }}
+                        title="Edit category"
+                        aria-label="Edit category"
+                      >
+                        <Gear size={14} />
+                      </button>
+                      <button
+                        className="card-btn card-btn-del"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmCategoryDelete(entry);
+                        }}
+                        title="Delete category"
+                        aria-label="Delete category"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="item-footer">
+                    <div className="item-meta">
+                      <span className="group-tag">
+                        {project?.name || "No project"}
+                      </span>
+                      <span className="category-summary">
+                        {childCategories} categories, {childItems} items
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            const item = entry;
             const project = resolveProject(item.projectId, projects);
             const liveEnabled = liveItemIds.includes(item.id);
             return (
-              <div key={item.id} className={`item-card ${item.type}`}>
+              <div
+                key={item.id}
+                className={`item-card ${item.type}`}
+                draggable
+                onDragStart={(e) => dragItem(e, item)}
+                onDragEnd={() => setDragOverCategoryId(null)}
+              >
                 <div className="item-head">
                   <span className="type-icon" aria-hidden="true">
                     {item.type === "folder" ? "📁" : "📄"}
                   </span>
                   <span className="item-name">{item.name}</span>
                   <div className="item-actions">
+                    <button
+                      className="card-btn card-btn-copy"
+                      onClick={() => cloneItem(item)}
+                      title="Clone"
+                      aria-label="Clone"
+                    >
+                      <Copy size={14} />
+                    </button>
                     <button
                       className="card-btn card-btn-edit"
                       onClick={() => openEdit(item)}
@@ -609,7 +995,7 @@ export default function SyncListView({ config, onRefresh }) {
         />
       )}
 
-      {showForm && (
+      {showForm && !targetDraft && (
         <EditorModal
           title={editing.id ? "Edit Sync Item" : "New Sync Item"}
           onClose={() => setShowForm(false)}
@@ -653,7 +1039,11 @@ export default function SyncListView({ config, onRefresh }) {
               <select
                 value={editing.projectId}
                 onChange={(e) =>
-                  setEditing({ ...editing, projectId: e.target.value })
+                  setEditing({
+                    ...editing,
+                    projectId: e.target.value,
+                    categoryId: "",
+                  })
                 }
               >
                 <option value="">None</option>
@@ -664,97 +1054,227 @@ export default function SyncListView({ config, onRefresh }) {
                 ))}
               </select>
             </label>
+            <label>
+              Category
+              <select
+                value={editing.categoryId || ""}
+                onChange={(e) =>
+                  setEditing({ ...editing, categoryId: e.target.value })
+                }
+              >
+                <option value="">Root</option>
+                {categoryOptions.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {categoryBreadcrumbs(categories, category.id)
+                      .map((part) => part.name)
+                      .join(" / ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {editing.type === "folder" && (
+              <label>
+                Local sync ignore
+                <textarea
+                  className="target-vars"
+                  value={editing.localSyncIgnoreText || ""}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      localSyncIgnoreText: e.target.value,
+                    })
+                  }
+                  placeholder={"node_modules/\n*.log"}
+                  rows={4}
+                />
+              </label>
+            )}
             <div className="form-section">Targets</div>
-            {(editing.targets || []).map((t, i) => (
-              <div key={i} className="target-row">
-                <div className="target-row-fields">
-                  <input
-                    className="target-name"
-                    value={t.name || ""}
-                    onChange={(e) => {
-                      const ts = [...editing.targets];
-                      ts[i] = { ...ts[i], name: e.target.value };
-                      setEditing({ ...editing, targets: ts });
-                    }}
-                    placeholder="Label (optional)"
-                  />
-                  <div className="target-remotes">
-                    {remotes.map((r) => {
-                      const selected = (
-                        t.remoteIds?.length
-                          ? t.remoteIds
-                          : [t.remoteId].filter(Boolean)
-                      ).includes(r.id);
-                      return (
-                        <label key={r.id}>
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={(e) =>
-                              toggleTargetRemote(i, r.id, e.target.checked)
-                            }
-                          />
-                          {r.name} ({r.kind})
-                        </label>
-                      );
-                    })}
+            <div className="target-list-editor">
+              {(editing.targets || []).map((t, i) => {
+                const remoteIds = t.remoteIds?.length
+                  ? t.remoteIds
+                  : [t.remoteId].filter(Boolean);
+                const remoteNames = remoteIds
+                  .map((id) => remotes.find((r) => r.id === id)?.name || id)
+                  .join(", ");
+                return (
+                  <div key={i} className="target-summary-row">
+                    <button
+                      type="button"
+                      className="target-summary-main"
+                      onClick={() => openTargetEditor(i)}
+                    >
+                      <span>{t.name || `Target ${i + 1}`}</span>
+                      <small>{remoteNames || "No remote"} - {t.dest || "No destination"}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="target-remove"
+                      onClick={() => removeTarget(i)}
+                      disabled={editing.targets.length <= 1}
+                      aria-label="Remove target"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                  <input
-                    className="target-dest"
-                    value={t.dest}
-                    onChange={(e) => {
-                      const ts = [...editing.targets];
-                      ts[i] = { ...ts[i], dest: e.target.value };
-                      setEditing({ ...editing, targets: ts });
-                    }}
-                    placeholder="/remote/path"
-                  />
-                  <textarea
-                    className="target-vars"
-                    value={t.variablesText || ""}
-                    onChange={(e) => {
-                      const ts = [...editing.targets];
-                      ts[i] = { ...ts[i], variablesText: e.target.value };
-                      setEditing({ ...editing, targets: ts });
-                    }}
-                    placeholder={"project=kasb\ndomain=files_program"}
-                    rows={3}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="target-remove"
-                  onClick={() => {
-                    const ts = editing.targets.filter((_, j) => j !== i);
-                    setEditing({ ...editing, targets: ts });
-                  }}
-                  disabled={editing.targets.length <= 1}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
+                );
+              })}
+            </div>
             <button
               type="button"
               className="target-add"
-              onClick={() =>
-                setEditing({
-                  ...editing,
-                  targets: [
-                    ...(editing.targets || []),
-                    {
-                      name: "",
-                      remoteIds: [],
-                      dest: "",
-                      variables: {},
-                      variablesText: "",
-                    },
-                  ],
-                })
-              }
+              onClick={() => openTargetEditor()}
             >
               <Plus size={14} weight="bold" /> Add target
             </button>
+          </div>
+        </EditorModal>
+      )}
+
+      {showForm && targetDraft && (
+        <EditorModal
+          title={targetDraft.index === null ? "New Target" : "Edit Target"}
+          onClose={() => setTargetDraft(null)}
+          onSave={saveTargetDraft}
+        >
+          <div className="form">
+            <label>
+              Label (optional)
+              <input
+                value={targetDraft.target.name || ""}
+                onChange={(e) => updateTargetDraft({ name: e.target.value })}
+                placeholder="e.g. Production"
+              />
+            </label>
+            <label>
+              Remotes
+              <div className="target-remotes">
+                {remotes.map((r) => {
+                  const selected = (
+                    targetDraft.target.remoteIds?.length
+                      ? targetDraft.target.remoteIds
+                      : [targetDraft.target.remoteId].filter(Boolean)
+                  ).includes(r.id);
+                  return (
+                    <label key={r.id}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(e) => toggleDraftRemote(r.id, e.target.checked)}
+                      />
+                      {r.name} ({r.kind})
+                    </label>
+                  );
+                })}
+              </div>
+            </label>
+            <label>
+              Destination path
+              <input
+                className="target-dest"
+                value={targetDraft.target.dest || ""}
+                onChange={(e) => updateTargetDraft({ dest: e.target.value })}
+                placeholder="/remote/path"
+              />
+            </label>
+            <label>
+              Variables
+              <textarea
+                className="target-vars"
+                value={targetDraft.target.variablesText || ""}
+                onChange={(e) =>
+                  updateTargetDraft({ variablesText: e.target.value })
+                }
+                placeholder={"project=kasb\ndomain=files_program"}
+                rows={3}
+              />
+            </label>
+            {editing.type === "folder" && (
+              <label>
+                Remote sync ignore
+                <textarea
+                  className="target-vars"
+                  value={targetDraft.target.remoteSyncIgnoreText || ""}
+                  onChange={(e) =>
+                    updateTargetDraft({ remoteSyncIgnoreText: e.target.value })
+                  }
+                  placeholder={"cache/\n*.tmp"}
+                  rows={4}
+                />
+              </label>
+            )}
+          </div>
+        </EditorModal>
+      )}
+
+      {categoryDraft && (
+        <EditorModal
+          title={categoryDraft.id ? "Edit Category" : "New Category"}
+          onClose={() => setCategoryDraft(null)}
+          onSave={saveCategoryDraft}
+        >
+          <div className="form">
+            <label>
+              Name
+              <input
+                value={categoryDraft.name}
+                onChange={(e) =>
+                  setCategoryDraft({ ...categoryDraft, name: e.target.value })
+                }
+                placeholder="e.g. Client sites"
+              />
+            </label>
+            <label>
+              Project
+              <select
+                value={categoryDraft.projectId || ""}
+                disabled={Boolean(categoryDraft.id)}
+                onChange={(e) =>
+                  setCategoryDraft({
+                    ...categoryDraft,
+                    projectId: e.target.value,
+                    parentId: "",
+                  })
+                }
+              >
+                <option value="">No project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Parent category
+              <select
+                value={categoryDraft.parentId || ""}
+                onChange={(e) =>
+                  setCategoryDraft({ ...categoryDraft, parentId: e.target.value })
+                }
+              >
+                <option value="">Root</option>
+                {categories
+                  .filter(
+                    (category) =>
+                      category.projectId === categoryDraft.projectId &&
+                      category.id !== categoryDraft.id &&
+                      !isCategoryDescendant(
+                        categories,
+                        categoryDraft.id,
+                        category.id,
+                      ),
+                  )
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {categoryBreadcrumbs(categories, category.id)
+                        .map((part) => part.name)
+                        .join(" / ")}
+                    </option>
+                  ))}
+              </select>
+            </label>
           </div>
         </EditorModal>
       )}
@@ -766,6 +1286,16 @@ export default function SyncListView({ config, onRefresh }) {
           confirmLabel="Delete"
           onConfirm={doRemove}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {confirmCategoryDelete && (
+        <ConfirmModal
+          title="Delete Category"
+          message={`Delete "${confirmCategoryDelete.name}"? Its direct items and subcategories will move up one level.`}
+          confirmLabel="Delete"
+          onConfirm={doRemoveCategory}
+          onCancel={() => setConfirmCategoryDelete(null)}
         />
       )}
 
