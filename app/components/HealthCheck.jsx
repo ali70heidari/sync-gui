@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { Warning, CaretDown, CaretUp, Copy, Check } from '@phosphor-icons/react';
 
 const INFO = {
   bash: {
@@ -57,22 +58,10 @@ function CodeBlock({ text }) {
   }
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 0,
-      fontFamily: 'ui-monospace, "Cascadia Code", monospace',
-      fontSize: 12, lineHeight: 1.5,
-      background: '#292524', borderRadius: 6, overflow: 'hidden',
-    }}>
-      <div style={{ flex: 1, padding: '8px 12px', color: '#a7f3d0', whiteSpace: 'pre-wrap' }}>
-        {text}
-      </div>
-      <button onClick={copy} style={{
-        border: 'none', background: copied ? '#065f46' : '#44403c',
-        color: copied ? '#6ee7b7' : '#d6d3d1',
-        cursor: 'pointer', padding: '8px 12px', fontSize: 12,
-        fontWeight: 600, borderRadius: 0, flexShrink: 0,
-      }}>
-        {copied ? '✓ Copied' : 'Copy'}
+    <div className="code-block">
+      <code>{text}</code>
+      <button className="code-copy" onClick={copy}>
+        {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
       </button>
     </div>
   );
@@ -100,32 +89,27 @@ export default function HealthCheck() {
   const isWin = deps.platform === 'win32';
 
   return (
-    <div style={{
-      background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 12,
-      margin: '0 24px 16px', fontSize: 13, overflow: 'hidden',
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '12px 16px', cursor: 'pointer',
-      }} onClick={() => setExpanded(!expanded)}>
-        <span style={{ fontSize: 18 }}>⚠️</span>
-        <span style={{ fontWeight: 700, color: '#92400e' }}>
+    <div className="health-banner">
+      <div className="health-header" onClick={() => setExpanded(!expanded)}>
+        <Warning size={18} />
+        <span className="health-title">
           {missing.length} system tool{missing.length > 1 ? 's' : ''} missing
         </span>
-        <span style={{ color: '#a16207', fontSize: 12 }}>
+        <span className="health-names">
           {missing.map(m => m.info?.label || m.name).join(', ')}
         </span>
-        <span style={{ marginLeft: 'auto', color: '#a16207', fontSize: 11 }}>
-          {expanded ? '▲' : '▼'} {expanded ? 'less' : 'details'}
+        <span className="health-toggle">
+          {expanded ? <CaretUp size={12} /> : <CaretDown size={12} />}
+          {expanded ? ' less' : ' details'}
         </span>
       </div>
 
       {expanded && (
-        <div style={{ padding: '0 16px 14px', display: 'grid', gap: 12 }}>
+        <div className="health-body">
           {isWin && !deps.msys2 && (
-            <div style={{ background: '#fef2f2', borderRadius: 8, padding: '10px 14px', border: '1px solid #fecaca' }}>
-              <div style={{ fontWeight: 700, color: '#991b1b', marginBottom: 4 }}>MSYS2 not installed</div>
-              <div style={{ color: '#7f1d1d', fontSize: 12, lineHeight: 1.6 }}>
+            <div className="health-msys2-warning">
+              <div className="health-msys2-title">MSYS2 not installed</div>
+              <div className="health-msys2-desc">
                 MSYS2 provides the Unix environment (bash, rsync, ssh, sshpass) required on Windows.
                 Run <strong>setup-win.ps1</strong> or download from msys2.org.
               </div>
@@ -133,34 +117,23 @@ export default function HealthCheck() {
           )}
 
           {missing.map(({ name, info }) => (
-            <div key={name} style={{
-              background: info?.level === 'critical' ? '#fef2f2' : '#fffbeb',
-              borderRadius: 8, padding: '10px 14px',
-              border: `1px solid ${info?.level === 'critical' ? '#fecaca' : '#fde68a'}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <span style={{ fontWeight: 700, color: '#1c1917', fontSize: 14 }}>{info?.label || name}</span>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 999,
-                  background: info?.level === 'critical' ? '#fecaca' : '#fde68a',
-                  color: info?.level === 'critical' ? '#991b1b' : '#92400e',
-                  textTransform: 'uppercase',
-                }}>
+            <div key={name} className={`health-item ${info?.level === 'critical' ? 'critical' : 'recommended'}`}>
+              <div className="health-item-header">
+                <span className="health-item-name">{info?.label || name}</span>
+                <span className={`health-level-badge ${info?.level}`}>
                   {info?.level === 'critical' ? 'REQUIRED' : 'RECOMMENDED'}
                 </span>
               </div>
-
-              <div style={{ color: '#44403c', fontSize: 12, lineHeight: 1.6, marginBottom: 6 }}>
+              <div className="health-item-desc">
                 {Array.isArray(info?.why)
                   ? info.why.map((line, i) => <div key={i} style={{ marginBottom: i < info.why.length - 1 ? 4 : 0 }}>{line}</div>)
                   : info?.why}
               </div>
-
               <CodeBlock text={isWin ? info?.fix?.win : info?.fix?.linux} />
             </div>
           ))}
 
-          <div style={{ textAlign: 'center', color: '#78716c', fontSize: 11, paddingTop: 2 }}>
+          <div className="health-footer">
             {isWin
               ? 'Run setup-win.ps1 to install all dependencies automatically'
               : 'Quick install:  sudo apt install rsync sshpass openssh-client'}
