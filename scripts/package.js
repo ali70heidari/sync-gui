@@ -37,6 +37,21 @@ function copyFiltered(source, target, skip) {
   });
 }
 
+function winToolsSource() {
+  const candidates = [
+    process.env.SYNC_GUI_WIN_TOOLS_BIN,
+    path.join(root, 'vendor', 'win-tools', 'usr', 'bin'),
+    'C:\\msys64\\usr\\bin'
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => (
+    fs.existsSync(path.join(candidate, 'bash.exe')) &&
+    fs.existsSync(path.join(candidate, 'rsync.exe')) &&
+    fs.existsSync(path.join(candidate, 'ssh.exe')) &&
+    fs.existsSync(path.join(candidate, 'sshpass.exe'))
+  ));
+}
+
 function psQuote(value) {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -169,10 +184,10 @@ function copyApp() {
   ));
 
   if (process.platform === 'win32') {
-    const toolsSource = path.join(root, 'vendor', 'win-tools', 'usr', 'bin');
+    const toolsSource = winToolsSource();
     const toolsTarget = path.join(appDir, 'vendor', 'win-tools', 'usr', 'bin');
-    if (!fs.existsSync(toolsSource)) {
-      throw new Error(`Bundled Windows tools are missing: ${toolsSource}`);
+    if (!toolsSource) {
+      throw new Error('Bundled Windows tools are missing. Add vendor/win-tools/usr/bin, set SYNC_GUI_WIN_TOOLS_BIN, or install MSYS2 to C:\\msys64.');
     }
     fs.cpSync(toolsSource, toolsTarget, { recursive: true });
     fs.mkdirSync(path.join(appDir, 'vendor', 'win-tools', 'tmp'), { recursive: true });
