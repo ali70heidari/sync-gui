@@ -677,7 +677,7 @@ export default function SyncListView({ config, onRefresh }) {
               <Plus size={14} weight="bold" /> Category
             </button>
           )}
-          <button className="primary" onClick={openNew}>
+          <button className="primary" onClick={() => openNew()}>
             <Plus size={14} weight="bold" /> Add
           </button>
         </div>
@@ -715,7 +715,7 @@ export default function SyncListView({ config, onRefresh }) {
         <div className="empty-state">
           No sync items yet.
           <br />
-          <button className="primary" onClick={openNew} style={{ marginTop: 16 }}>
+          <button className="primary" onClick={() => openNew()} style={{ marginTop: 16 }}>
             <Plus size={14} weight="bold" /> Add your first item
           </button>
         </div>
