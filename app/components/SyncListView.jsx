@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Plus, CaretUp, CaretDown, Gear, X, Lightning, ClockCounterClockwise, Copy } from "@phosphor-icons/react";
+import { Plus, CaretUp, CaretDown, CaretRight, Gear, X, Lightning, ClockCounterClockwise, Copy } from "@phosphor-icons/react";
 import EditorModal from "./EditorModal";
 import ConfirmModal from "./ConfirmModal";
 import TargetPicker from "./TargetPicker";
@@ -96,6 +96,10 @@ export default function SyncListView({ config, onRefresh }) {
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState("ready");
   const [history, setHistory] = useState([]);
+  const [historyMinimized, setHistoryMinimized] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return JSON.parse(localStorage.getItem(LS_KEY) || "{}").historyMinimized || false;
+  });
   const [syncingIds, setSyncingIds] = useState([]);
   const [syncTargetPicker, setSyncTargetPicker] = useState(null);
   const [targetDraft, setTargetDraft] = useState(null);
@@ -128,9 +132,9 @@ export default function SyncListView({ config, onRefresh }) {
   useEffect(() => {
     localStorage.setItem(
       LS_KEY,
-      JSON.stringify({ dryRun, noDelete, liveItemIds }),
+      JSON.stringify({ dryRun, noDelete, liveItemIds, historyMinimized }),
     );
-  }, [dryRun, noDelete, liveItemIds]);
+  }, [dryRun, noDelete, liveItemIds, historyMinimized]);
   useEffect(() => {
     loadHistory();
     const id = setInterval(loadHistory, 5000);
@@ -943,41 +947,64 @@ export default function SyncListView({ config, onRefresh }) {
         </div>
       )}
 
-      {history.length > 0 && (
-        <div className="side-panel" style={{ marginTop: 16 }}>
-          <div className="side-panel-head">
-            <span className="tab active">
-              <ClockCounterClockwise size={12} /> Recent Jobs
-            </span>
-            <button
-              className="history-clear"
-              onClick={() => setConfirmClearHistory(true)}
-            >
-              Clear history
-            </button>
-          </div>
-          {history.slice(0, 15).map((j) => (
-            <div
-              key={j.id}
-              className={`history-item-mini ${j.status}`}
-              onClick={() => {
-                setOutput(j.output || "");
-                setStatus(j.status === "succeeded" ? "done" : "failed");
-              }}
-            >
-              <span className={`status-dot ${j.status}`} />
-              <span className="h-direction">{j.direction}</span>
-              <span style={{ flex: 1, fontSize: 12, color: "var(--muted)" }}>
-                {describeJob(j, items)}
+      <aside className={`history-sidebar ${historyMinimized ? "minimized" : ""}`}>
+        {historyMinimized ? (
+          <button
+            className="history-sidebar-rail"
+            onClick={() => setHistoryMinimized(false)}
+            aria-label="Show history"
+          >
+            <ClockCounterClockwise size={18} />
+            {history.length > 0 && <span>{Math.min(history.length, 99)}</span>}
+          </button>
+        ) : (
+          <>
+            <div className="history-sidebar-head">
+              <button
+                className="history-minimize"
+                onClick={() => setHistoryMinimized(true)}
+                aria-label="Minimize history"
+              >
+                <CaretRight size={14} weight="bold" />
+              </button>
+              <span>
+                <ClockCounterClockwise size={13} /> Recent Jobs
               </span>
-              <span className="h-time">
-                {new Date(j.startedAt).toLocaleTimeString()}
-              </span>
-              <span className={`h-status ${j.status}`}>{j.status}</span>
+              <button
+                className="history-clear"
+                onClick={() => setConfirmClearHistory(true)}
+                disabled={history.length === 0}
+              >
+                Clear
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+            {history.length === 0 ? (
+              <p className="history-empty">No jobs yet.</p>
+            ) : (
+              <div className="history-sidebar-list">
+                {history.slice(0, 20).map((j) => (
+                  <div
+                    key={j.id}
+                    className={`history-item-mini ${j.status}`}
+                    onClick={() => {
+                      setOutput(j.output || "");
+                      setStatus(j.status === "succeeded" ? "done" : "failed");
+                    }}
+                  >
+                    <span className={`status-dot ${j.status}`} />
+                    <span className="h-direction">{j.direction}</span>
+                    <span className="h-title">{describeJob(j, items)}</span>
+                    <span className="h-time">
+                      {new Date(j.startedAt).toLocaleTimeString()}
+                    </span>
+                    <span className={`h-status ${j.status}`}>{j.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </aside>
 
       {syncTargetPicker && (
         <TargetPicker

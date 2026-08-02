@@ -1,18 +1,21 @@
 ﻿'use client';
 import { useState, useEffect, useRef } from 'react';
-import { ArrowsLeftRight, FolderOpen, ComputerTower, Upload, Download } from '@phosphor-icons/react';
+import { ArrowsLeftRight, FolderOpen, ComputerTower, Upload, Download, TerminalWindow } from '@phosphor-icons/react';
 import SyncListView from './components/SyncListView';
 import ProjectsView from './components/ProjectsView';
 import RemotesView from './components/RemotesView';
 import HealthCheck from './components/HealthCheck';
 import ToastContainer from './components/Toast';
 import ImportModal from './components/ImportModal';
+import TerminalPanel from './components/TerminalPanel';
 
 export default function Page() {
   const [tab, setTab] = useState('items');
   const [config, setConfig] = useState({ remotes: [], projects: [], categories: [], items: [] });
   const [refreshKey, setRefreshKey] = useState(0);
   const [importAnalysis, setImportAnalysis] = useState(null);
+  const [terminalRemote, setTerminalRemote] = useState(null);
+  const [terminalPickerOpen, setTerminalPickerOpen] = useState(false);
   const fileInput = useRef(null);
 
   useEffect(() => { loadConfig(); }, []);
@@ -68,6 +71,21 @@ export default function Page() {
     if (r.ok) refresh();
   }
 
+  function openTerminalLauncher() {
+    const remotes = config.remotes || [];
+    if (remotes.length === 1) {
+      setTerminalRemote(remotes[0]);
+      setTerminalPickerOpen(false);
+      return;
+    }
+    setTerminalPickerOpen(open => !open);
+  }
+
+  function openTerminalRemote(remote) {
+    setTerminalRemote(remote);
+    setTerminalPickerOpen(false);
+  }
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -104,8 +122,56 @@ export default function Page() {
         <HealthCheck />
         {tab === 'items' && <SyncListView key={'il' + refreshKey} config={config} onRefresh={refresh} />}
         {tab === 'projects' && <ProjectsView key={'pv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
-        {tab === 'remotes' && <RemotesView key={'rv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
+        {tab === 'remotes' && (
+          <RemotesView
+            key={'rv' + refreshKey}
+            config={config}
+            onBack={goItems}
+            onRefresh={refresh}
+            activeTerminalRemote={terminalRemote}
+            onOpenTerminal={openTerminalRemote}
+          />
+        )}
+        {terminalRemote && (
+          <div className="page-terminal-dock">
+            <TerminalPanel
+              key={terminalRemote.id}
+              remote={terminalRemote}
+              onClose={() => setTerminalRemote(null)}
+              onNew={() => setTerminalPickerOpen(true)}
+              className="page-terminal-panel"
+            />
+          </div>
+        )}
       </main>
+      <div className="terminal-launcher">
+        {terminalPickerOpen && (
+          <div className="terminal-launcher-menu">
+            <div className="terminal-launcher-head">Open terminal</div>
+            {(config.remotes || []).length === 0 ? (
+              <div className="terminal-launcher-empty">No remotes configured</div>
+            ) : (
+              (config.remotes || []).map(remote => (
+                <button
+                  key={remote.id}
+                  className={terminalRemote?.id === remote.id ? 'active' : ''}
+                  onClick={() => openTerminalRemote(remote)}
+                >
+                  <span>{remote.name || remote.host || remote.root || remote.id}</span>
+                  <small>{remote.kind === 'ssh' ? `${remote.username}@${remote.host}` : remote.root}</small>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+        <button
+          className={`terminal-launcher-btn ${terminalRemote ? 'active' : ''}`}
+          onClick={openTerminalLauncher}
+          aria-label="Open terminal"
+        >
+          <TerminalWindow size={22} weight="bold" />
+        </button>
+      </div>
       <ToastContainer />
       {importAnalysis && (
         <ImportModal

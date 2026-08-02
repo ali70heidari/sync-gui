@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, X, Gear, CaretLeft, Eye, EyeSlash } from "@phosphor-icons/react";
+import { Plus, X, Gear, CaretLeft, Eye, EyeSlash, TerminalWindow } from "@phosphor-icons/react";
 import EditorModal from "./EditorModal";
 import ConfirmModal from "./ConfirmModal";
 import { toast } from "./Toast";
@@ -18,7 +18,7 @@ function blankRemote() {
   };
 }
 
-export default function RemotesView({ config, onBack, onRefresh }) {
+export default function RemotesView({ config, onBack, onRefresh, activeTerminalRemote, onOpenTerminal }) {
   const { remotes = [] } = config;
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -151,7 +151,7 @@ export default function RemotesView({ config, onBack, onRefresh }) {
       ) : (
         <div className="remote-list">
           {remotes.map((r) => (
-            <div key={r.id} className="remote-row">
+            <div key={r.id} className={`remote-row ${activeTerminalRemote?.id === r.id ? "active" : ""}`}>
               <div className="remote-info">
                 <strong>{r.name}</strong>
                 <span className={`badge badge-${r.kind}`}>{r.kind}</span>
@@ -173,6 +173,13 @@ export default function RemotesView({ config, onBack, onRefresh }) {
                 )}
               </div>
               <div className="remote-actions">
+                <button
+                  className="remote-terminal-btn"
+                  onClick={() => onOpenTerminal?.(r)}
+                >
+                  <TerminalWindow size={14} />
+                  Terminal
+                </button>
                 <button
                   className="remote-check-btn"
                   onClick={() => checkConnection(r)}
@@ -330,6 +337,7 @@ export default function RemotesView({ config, onBack, onRefresh }) {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+
     </div>
   );
 }
