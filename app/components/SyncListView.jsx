@@ -96,20 +96,15 @@ export default function SyncListView({ config, onRefresh }) {
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState("ready");
   const [history, setHistory] = useState([]);
-  const [historyMinimized, setHistoryMinimized] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return JSON.parse(localStorage.getItem(LS_KEY) || "{}").historyMinimized || false;
-  });
+  const [historyMinimized, setHistoryMinimized] = useState(false);
   const [syncingIds, setSyncingIds] = useState([]);
   const [syncTargetPicker, setSyncTargetPicker] = useState(null);
   const [targetDraft, setTargetDraft] = useState(null);
-  const [liveItemIds, setLiveItemIds] = useState(() => {
-    if (typeof window === "undefined") return [];
-    return JSON.parse(localStorage.getItem(LS_KEY) || "{}").liveItemIds || [];
-  });
+  const [liveItemIds, setLiveItemIds] = useState([]);
 
   const pollRef = useRef(null);
   const mountedRef = useRef(true);
+  const settingsLoadedRef = useRef(false);
   const liveLastRunRef = useRef({});
   const statusRef = useRef(status);
   useEffect(() => {
@@ -120,16 +115,21 @@ export default function SyncListView({ config, onRefresh }) {
     itemsRef.current = items;
   });
 
-  const [dryRun, setDryRun] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return JSON.parse(localStorage.getItem(LS_KEY) || "{}").dryRun || false;
-  });
-  const [noDelete, setNoDelete] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return JSON.parse(localStorage.getItem(LS_KEY) || "{}").noDelete || false;
-  });
+  const [dryRun, setDryRun] = useState(false);
+  const [noDelete, setNoDelete] = useState(false);
 
   useEffect(() => {
+    try {
+      const settings = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+      setHistoryMinimized(!!settings.historyMinimized);
+      setLiveItemIds(Array.isArray(settings.liveItemIds) ? settings.liveItemIds : []);
+      setDryRun(!!settings.dryRun);
+      setNoDelete(!!settings.noDelete);
+    } catch { }
+    settingsLoadedRef.current = true;
+  }, []);
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
     localStorage.setItem(
       LS_KEY,
       JSON.stringify({ dryRun, noDelete, liveItemIds, historyMinimized }),
