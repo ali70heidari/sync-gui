@@ -120,7 +120,7 @@ export default function Page() {
       </header>
       <main>
         <HealthCheck />
-        {tab === 'items' && <SyncListView key={'il' + refreshKey} config={config} onRefresh={refresh} />}
+        {tab === 'items' && <SyncListView config={config} onRefresh={refresh} />}
         {tab === 'projects' && <ProjectsView key={'pv' + refreshKey} config={config} onBack={goItems} onRefresh={refresh} />}
         {tab === 'remotes' && (
           <RemotesView
