@@ -22,7 +22,7 @@ export default function EditorModal({
   }, []);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <header>
           <h2>{title}</h2>

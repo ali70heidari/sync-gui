@@ -23,7 +23,7 @@ export default function TargetPicker({ item, remotes, direction, onStart, onClos
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal target-picker" onClick={e => e.stopPropagation()}
         onKeyDown={e => e.key === 'Escape' && onClose()} tabIndex={-1}>
         <header>

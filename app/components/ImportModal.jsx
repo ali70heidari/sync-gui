@@ -37,7 +37,7 @@ export default function ImportModal({ analysis, onApply, onClose }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal import-modal" onClick={e => e.stopPropagation()}
         onKeyDown={e => e.key === 'Escape' && onClose()} tabIndex={-1}>
         <header>

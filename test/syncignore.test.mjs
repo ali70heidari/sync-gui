@@ -50,4 +50,35 @@ test('.syncignore excludes matches and preserves ignored destination files', asy
   assert.equal(await fsp.readFile(path.join(source, 'src', 'app.js'), 'utf8'), 'downloaded');
   assert.equal(await fsp.readFile(path.join(source, 'node_modules', 'existing.js'), 'utf8'), 'local-preserved');
   assert.equal(await fsp.readFile(path.join(source, '.syncignore'), 'utf8'), 'node_modules/\n*.log\n');
+
+  const source2 = path.join(tmp, 'source-config');
+  const destination2 = path.join(tmp, 'destination-config');
+  await fsp.mkdir(source2, { recursive: true });
+  await fsp.mkdir(destination2, { recursive: true });
+  await fsp.writeFile(path.join(source2, 'keep.txt'), 'local keep');
+  await fsp.writeFile(path.join(source2, 'local.log'), 'ignored local');
+  await fsp.writeFile(path.join(destination2, 'remote.tmp'), 'ignored remote');
+  await fsp.writeFile(configPath, JSON.stringify({
+    remotes: [{ id: 'local', name: 'Local', kind: 'local' }],
+    projects: [],
+    items: [{
+      id: 'project',
+      name: 'Project',
+      source: source2,
+      type: 'folder',
+      localSyncIgnore: '*.log',
+      targets: [{ remoteIds: ['local'], dest: destination2, remoteSyncIgnore: '*.tmp' }]
+    }]
+  }));
+
+  const upload = await runSync({ direction: 'up', itemTargets: { project: [0] } });
+  assert.equal(upload.exitCode, 0, upload.output);
+  await assert.rejects(fsp.access(path.join(destination2, 'local.log')));
+  assert.equal(await fsp.readFile(path.join(destination2, 'keep.txt'), 'utf8'), 'local keep');
+
+  await fsp.writeFile(path.join(destination2, 'download.txt'), 'remote keep');
+  const configDownload = await runSync({ direction: 'down', itemTargets: { project: [0] } });
+  assert.equal(configDownload.exitCode, 0, configDownload.output);
+  await assert.rejects(fsp.access(path.join(source2, 'remote.tmp')));
+  assert.equal(await fsp.readFile(path.join(source2, 'download.txt'), 'utf8'), 'remote keep');
 });
