@@ -25,6 +25,8 @@ struct SyncJob {
     dry_run: bool,
     #[serde(rename = "noDelete")]
     no_delete: bool,
+    #[serde(default)]
+    force: bool,
     #[serde(rename = "itemTargets")]
     item_targets: serde_json::Value,
     #[serde(rename = "itemIds")]
@@ -116,7 +118,7 @@ fn init_env(_app_handle: &AppHandle) {
                 let _ = fs::create_dir_all(bundled_root.join("home").join("sync-gui").join(".ssh"));
 
                 env::set_var("SYNC_GUI_BASH", &bundled_bash);
-                env::set_var("SYNC_GUI_DRIVE_PREFIX", "/cygdrive");
+                env::set_var("SYNC_GUI_DRIVE_PREFIX", "");
                 env::set_var("SYNC_GUI_KNOWN_HOSTS", "/home/sync-gui/.ssh/known_hosts");
                 env::set_var("HOME", "/home/sync-gui");
 
@@ -474,28 +476,52 @@ fn check_remote_connection(remote_id: String) -> Result<serde_json::Value, Strin
 fn check_ssh(remote: &serde_json::Value) -> Result<(bool, String), String> {
     let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
     let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
+    let auth_method = remote.get("authMethod").and_then(|v| v.as_str()).unwrap_or("password");
     let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
+    let private_key = remote.get("privateKeyPath").and_then(|v| v.as_str()).unwrap_or("");
+    let passphrase = remote.get("keyPassphrase").and_then(|v| v.as_str()).unwrap_or("");
     let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
 
     if host.is_empty() || username.is_empty() {
         return Ok((false, "SSH remote needs host and username.".to_string()));
     }
 
-    let known_hosts_opt = if let Ok(hosts) = env::var("SYNC_GUI_KNOWN_HOSTS") {
-        format!(" -o UserKnownHostsFile='{}'", hosts.replace('\'', "'\\''"))
+    let known_hosts_opt = ssh_known_hosts_option();
+    let is_key_auth = auth_method == "key" || (!private_key.is_empty() && password.is_empty());
+
+    let (ssh_cmd, auth_pass) = if is_key_auth {
+        if private_key.is_empty() {
+            return Ok((false, "Private key file is required for SSH key authentication.".to_string()));
+        }
+        let key_opt = format!(" -i {}", shq(&to_shell_path(private_key)));
+        if !passphrase.is_empty() {
+            (
+                format!(
+                    "sshpass -e ssh -p {} -o BatchMode=no -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new{}{}{}@{} 'printf ok'",
+                    port, key_opt, known_hosts_opt, username, host
+                ),
+                passphrase,
+            )
+        } else {
+            (
+                format!(
+                    "ssh -p {} -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new{}{}{}@{} 'printf ok'",
+                    port, key_opt, known_hosts_opt, username, host
+                ),
+                "",
+            )
+        }
     } else {
-        "".to_string()
+        (
+            format!(
+                "sshpass -e ssh -p {} -o BatchMode=no -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new{}{}@{} 'printf ok'",
+                port, known_hosts_opt, username, host
+            ),
+            password,
+        )
     };
 
-    let ssh_cmd = format!(
-        "sshpass -e ssh -p {} -o BatchMode=no -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new{}{}@{} 'printf ok'",
-        port,
-        known_hosts_opt,
-        username,
-        host
-    );
-
-    match run_bash_process(&ssh_cmd, password) {
+    match run_bash_process(&ssh_cmd, auth_pass) {
         Ok((code, output)) => {
             if code == 0 && output.contains("ok") {
                 Ok((true, "SSH connection works.".to_string()))
@@ -605,6 +631,7 @@ fn start_sync_job(
     direction: String,
     dry_run: bool,
     no_delete: bool,
+    force: Option<bool>,
     item_targets: serde_json::Value,
 ) -> Result<SyncJob, String> {
     let config = read_config()?;
@@ -630,6 +657,7 @@ fn start_sync_job(
         return Err("No items to sync.".to_string());
     }
 
+    let is_force = force.unwrap_or(false);
     let mut next_id = state.next_job_id.lock().unwrap();
     let job_id = next_id.to_string();
     *next_id += 1;
@@ -639,6 +667,7 @@ fn start_sync_job(
         direction: direction.clone(),
         dry_run,
         no_delete,
+        force: is_force,
         item_targets: item_targets.clone(),
         item_ids: item_ids.clone(),
         status: "running".to_string(),
@@ -660,7 +689,7 @@ fn start_sync_job(
     let job_id_clone = job_id.clone();
     
     std::thread::spawn(move || {
-        let result = run_sync_internal_ctx(&config, &direction, dry_run, no_delete, &item_targets, Some(&job_id_clone), Some(&pids_mutex), Some(&cancel_flag));
+        let result = run_sync_internal_ctx(&config, &direction, dry_run, no_delete, is_force, &item_targets, Some(&job_id_clone), Some(&pids_mutex), Some(&cancel_flag));
         
         // Clean up tracking maps
         pids_mutex.lock().unwrap().remove(&job_id_clone);
@@ -757,9 +786,17 @@ fn run_sync_internal(
     direction: &str,
     dry_run: bool,
     no_delete: bool,
+    force: bool,
     item_targets: &serde_json::Value,
 ) -> Result<(i32, String), String> {
-    run_sync_internal_ctx(config, direction, dry_run, no_delete, item_targets, None, None, None)
+    run_sync_internal_ctx(config, direction, dry_run, no_delete, force, item_targets, None, None, None)
+}
+
+struct PostSyncMapping {
+    item_name: String,
+    label: String,
+    target: serde_json::Value,
+    remote: serde_json::Value,
 }
 
 fn run_sync_internal_ctx(
@@ -767,6 +804,7 @@ fn run_sync_internal_ctx(
     direction: &str,
     dry_run: bool,
     no_delete: bool,
+    _force: bool,
     item_targets: &serde_json::Value,
     job_id: Option<&str>,
     active_pids: Option<&Arc<Mutex<HashMap<String, u32>>>>,
@@ -780,6 +818,7 @@ fn run_sync_internal_ctx(
     
     let mut chunks = Vec::new();
     let mut final_code = 0;
+    let mut post_upload_mappings: Vec<PostSyncMapping> = Vec::new();
 
     for (item_id, targets_val) in item_targets_obj {
         if let Some(flag) = cancel_flag {
@@ -811,6 +850,22 @@ fn run_sync_internal_ctx(
                 
                 let project = projects_arr.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(project_id));
                 let remote_ids = target_remote_ids(target);
+
+                // Reject targets referencing non-existent remotes
+                let missing_remote_ids: Vec<&str> = remote_ids.iter()
+                    .filter(|rid| !remotes_arr.iter().any(|r| r.get("id").and_then(|v| v.as_str()) == Some(rid.as_str())))
+                    .map(|s| s.as_str())
+                    .collect();
+                if !missing_remote_ids.is_empty() {
+                    let target_name = target.get("name").and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("target {}", ti));
+                    let missing_str = missing_remote_ids.iter().map(|id| format!("\"{}\"", id)).collect::<Vec<_>>().join(", ");
+                    return Err(format!(
+                        "Item \"{}\" / {} references unknown remote {}. Select an existing remote for this target.",
+                        name, target_name, missing_str
+                    ));
+                }
                 
                 let mut remotes: Vec<serde_json::Value> = if !remote_ids.is_empty() {
                     remote_ids.iter().filter_map(|rid| {
@@ -867,6 +922,20 @@ fn run_sync_internal_ctx(
                         final_code = code;
                     }
                     chunks.push(format!("[{} ? {}] exit {}", name, label, code));
+
+                    // Check for post-sync target command on successful upload
+                    if code == 0 && !dry_run {
+                        if let Some(post_cmd) = target.get("postSyncCommand").and_then(|v| v.as_str()) {
+                            if !post_cmd.trim().is_empty() {
+                                post_upload_mappings.push(PostSyncMapping {
+                                    item_name: name.to_string(),
+                                    label: label.clone(),
+                                    target: target.clone(),
+                                    remote: remote.clone(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -876,6 +945,22 @@ fn run_sync_internal_ctx(
                 let target = &targets[ti];
                 let project = projects_arr.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(project_id));
                 let remote_ids = target_remote_ids(target);
+
+                // Reject targets referencing non-existent remotes
+                let missing_remote_ids: Vec<&str> = remote_ids.iter()
+                    .filter(|rid| !remotes_arr.iter().any(|r| r.get("id").and_then(|v| v.as_str()) == Some(rid.as_str())))
+                    .map(|s| s.as_str())
+                    .collect();
+                if !missing_remote_ids.is_empty() {
+                    let target_name = target.get("name").and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("target {}", ti));
+                    let missing_str = missing_remote_ids.iter().map(|id| format!("\"{}\"", id)).collect::<Vec<_>>().join(", ");
+                    return Err(format!(
+                        "Item \"{}\" / {} references unknown remote {}. Select an existing remote for this target.",
+                        name, target_name, missing_str
+                    ));
+                }
                 
                 let mut remotes: Vec<serde_json::Value> = if !remote_ids.is_empty() {
                     remote_ids.iter().filter_map(|rid| {
@@ -937,7 +1022,82 @@ fn run_sync_internal_ctx(
         }
     }
 
+    // Execute post-upload commands if all uploads succeeded
+    if final_code == 0 && !post_upload_mappings.is_empty() {
+        for mapping in post_upload_mappings {
+            if let Some(flag) = cancel_flag {
+                if flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    chunks.push("⛔ [Cancelled] Sync job was cancelled by user.".to_string());
+                    return Ok((130, chunks.join("\n")));
+                }
+            }
+            chunks.push(format!("[{} ? {}] after successful upload", mapping.item_name, mapping.label));
+            let (p_code, p_out) = run_post_upload_command(&mapping.target, &mapping.remote, job_id, active_pids, cancel_flag)?;
+            if !p_out.is_empty() {
+                chunks.push(p_out);
+            }
+            if p_code != 0 && final_code == 0 {
+                final_code = p_code;
+            }
+            chunks.push(format!("[{} ? {}] after-upload exit {}", mapping.item_name, mapping.label, p_code));
+        }
+    }
+
     Ok((final_code, chunks.join("\n")))
+}
+
+fn run_post_upload_command(
+    target: &serde_json::Value,
+    remote: &serde_json::Value,
+    job_id: Option<&str>,
+    active_pids: Option<&Arc<Mutex<HashMap<String, u32>>>>,
+    cancel_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<(i32, String), String> {
+    let command = target.get("postSyncCommand").and_then(|v| v.as_str()).unwrap_or("").trim();
+    if command.is_empty() {
+        return Ok((0, String::new()));
+    }
+    let kind = remote.get("kind").and_then(|v| v.as_str()).unwrap_or("local");
+    if kind != "ssh" {
+        return run_bash_process_ctx(command, "", job_id, active_pids, cancel_flag);
+    }
+
+    let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
+    let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
+    let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
+    let auth_method = remote.get("authMethod").and_then(|v| v.as_str()).unwrap_or("password");
+    let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
+    let private_key = remote.get("privateKeyPath").and_then(|v| v.as_str()).unwrap_or("");
+    let passphrase = remote.get("keyPassphrase").and_then(|v| v.as_str()).unwrap_or("");
+
+    let known_hosts_opt = ssh_known_hosts_option();
+    let is_key_auth = auth_method == "key" || (!private_key.is_empty() && password.is_empty());
+
+    let (ssh_prefix, auth_pass) = if is_key_auth {
+        let key_opt = if !private_key.is_empty() {
+            format!(" -i {}", shq(&to_shell_path(private_key)))
+        } else {
+            "".to_string()
+        };
+        if !passphrase.is_empty() {
+            (format!("sshpass -e ssh{}", key_opt), passphrase)
+        } else {
+            (format!("ssh{}", key_opt), "")
+        }
+    } else {
+        ("sshpass -e ssh".to_string(), password)
+    };
+
+    let ssh_cmd = format!(
+        "{} -p {} -o StrictHostKeyChecking=accept-new{}{}@{} {}",
+        ssh_prefix,
+        port,
+        known_hosts_opt,
+        username,
+        host,
+        shq(command)
+    );
+    run_bash_process_ctx(&ssh_cmd, auth_pass, job_id, active_pids, cancel_flag)
 }
 
 fn shq(v: &str) -> String {
@@ -951,17 +1111,30 @@ fn to_shell_path(value: &str) -> String {
     if raw.len() >= 3 && raw.as_bytes()[1] == b':' && raw.as_bytes()[2] == b'/' {
         let drive_letter = (raw.as_bytes()[0] as char).to_ascii_lowercase();
         let rest = &raw[3..];
-        return format!("{}/{}/{}", drive_prefix, drive_letter, rest);
+        if drive_prefix.is_empty() {
+            return format!("/{}/{}", drive_letter, rest);
+        } else {
+            return format!("{}/{}/{}", drive_prefix.trim_end_matches('/'), drive_letter, rest);
+        }
     }
     
     if let Ok(abs_path) = fs::canonicalize(value) {
         let abs_str = abs_path.to_string_lossy().replace('\\', "/");
-        if abs_str.len() >= 3 && abs_str.as_bytes()[1] == b':' && abs_str.as_bytes()[2] == b'/' {
-            let drive_letter = (abs_str.as_bytes()[0] as char).to_ascii_lowercase();
-            let rest = &abs_str[3..];
-            return format!("{}/{}/{}", drive_prefix, drive_letter, rest);
+        let clean_abs = if abs_str.starts_with("//?/") {
+            &abs_str[4..]
+        } else {
+            &abs_str
+        };
+        if clean_abs.len() >= 3 && clean_abs.as_bytes()[1] == b':' && clean_abs.as_bytes()[2] == b'/' {
+            let drive_letter = (clean_abs.as_bytes()[0] as char).to_ascii_lowercase();
+            let rest = &clean_abs[3..];
+            if drive_prefix.is_empty() {
+                return format!("/{}/{}", drive_letter, rest);
+            } else {
+                return format!("{}/{}/{}", drive_prefix.trim_end_matches('/'), drive_letter, rest);
+            }
         }
-        return abs_str;
+        return clean_abs.to_string();
     }
     
     raw
@@ -1174,25 +1347,53 @@ fn remote_find_command(pattern: &str) -> Result<String, String> {
     Ok(format!("find {} -type f -name {} -print", shq(&matcher.root), shq(name_pattern)))
 }
 
+fn ssh_command_invocation(remote: &serde_json::Value) -> (String, String) {
+    let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
+    let auth_method = remote.get("authMethod").and_then(|v| v.as_str()).unwrap_or("password");
+    let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
+    let private_key = remote.get("privateKeyPath").and_then(|v| v.as_str()).unwrap_or("");
+    let passphrase = remote.get("keyPassphrase").and_then(|v| v.as_str()).unwrap_or("");
+    let is_key_auth = auth_method == "key" || (!private_key.is_empty() && password.is_empty());
+
+    let (ssh_prefix, auth_pass) = if is_key_auth {
+        let key_opt = if !private_key.is_empty() {
+            format!(" -i {}", shq(&to_shell_path(private_key)))
+        } else {
+            "".to_string()
+        };
+        if !passphrase.is_empty() {
+            (format!("sshpass -e ssh{}", key_opt), passphrase.to_string())
+        } else {
+            (format!("ssh{}", key_opt), String::new())
+        }
+    } else {
+        ("sshpass -e ssh".to_string(), password.to_string())
+    };
+
+    let ssh = format!(
+        "{} -p {} -o StrictHostKeyChecking=accept-new{}",
+        ssh_prefix,
+        port,
+        ssh_known_hosts_option()
+    );
+    (ssh, auth_pass)
+}
+
 fn list_remote_matches(remote: &serde_json::Value, pattern: &str) -> Result<Vec<String>, String> {
     let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
     let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
-    let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
-    let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
-    
-    let ssh_known = ssh_known_hosts_option();
+    let (ssh_invocation, auth_pass) = ssh_command_invocation(remote);
     let find_command = remote_find_command(pattern)?;
     
     let ssh_cmd = format!(
-        "sshpass -e ssh -p {} -o StrictHostKeyChecking=accept-new{} {}@{} {}",
-        port,
-        ssh_known,
+        "{} {}@{} {}",
+        ssh_invocation,
         username,
         host,
         shq(&find_command)
     );
     
-    let (code, output) = run_bash_process(&ssh_cmd, password)?;
+    let (code, output) = run_bash_process(&ssh_cmd, &auth_pass)?;
     if code == 0 {
         let paths: Vec<String> = output.lines()
             .map(|s| s.trim().to_string())
@@ -1213,15 +1414,9 @@ fn sync_ssh_exact_down(
 ) -> Result<(i32, String), String> {
     let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
     let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
-    let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
-    let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
+    let (ssh, auth_pass) = ssh_command_invocation(remote);
     
     let remote_spec = format!("{}@{}:{}", username, host, remote_path);
-    let ssh = format!(
-        "sshpass -e ssh -p {} -o StrictHostKeyChecking=accept-new{}",
-        port,
-        ssh_known_hosts_option()
-    );
     
     let mut flags = vec!["-azs".to_string(), "--human-readable".to_string(), "--itemize-changes".to_string(), "--no-o".to_string(), "--no-g".to_string()];
     
@@ -1257,7 +1452,7 @@ fn sync_ssh_exact_down(
     ];
     
     let full_command = commands.join("\n");
-    run_bash_process(&full_command, password)
+    run_bash_process(&full_command, &auth_pass)
 }
 
 fn sync_ssh_wildcard_down(
@@ -1355,19 +1550,13 @@ fn sync_ssh(
     
     let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
     let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
-    let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
-    let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
     
     if username.is_empty() || host.is_empty() {
         return Ok((1, format!("❌ [Error] Remote SSH configuration incomplete: username=\"{}\", host=\"{}\".", username, host)));
     }
 
+    let (ssh, auth_pass) = ssh_command_invocation(remote);
     let remote_spec = format!("{}@{}:{}", username, host, remote_path);
-    let ssh = format!(
-        "sshpass -e ssh -p {} -o StrictHostKeyChecking=accept-new{}",
-        port,
-        ssh_known_hosts_option()
-    );
     
     let mut flags = vec!["-azs".to_string(), "--human-readable".to_string(), "--itemize-changes".to_string(), "--no-o".to_string(), "--no-g".to_string()];
     if dry_run {
@@ -1430,7 +1619,7 @@ fn sync_ssh(
     }
     
     let full_command = commands.join("\n");
-    run_bash_process_ctx(&full_command, password, job_id, active_pids, cancel_flag)
+    run_bash_process_ctx(&full_command, &auth_pass, job_id, active_pids, cancel_flag)
 }
 
 fn target_remote_ids(target: &serde_json::Value) -> Vec<String> {
@@ -1883,19 +2072,41 @@ fn get_terminal_command(remote: &serde_json::Value) -> Result<TerminalCommandSpe
     if kind == "ssh" {
         let host = remote.get("host").and_then(|v| v.as_str()).unwrap_or("");
         let username = remote.get("username").and_then(|v| v.as_str()).unwrap_or("");
-        let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
         let port = remote.get("port").and_then(|v| v.as_i64()).unwrap_or(22);
+        let auth_method = remote.get("authMethod").and_then(|v| v.as_str()).unwrap_or("password");
+        let password = remote.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let private_key = remote.get("privateKeyPath").and_then(|v| v.as_str()).unwrap_or("");
+        let passphrase = remote.get("keyPassphrase").and_then(|v| v.as_str()).unwrap_or("");
         
         if host.is_empty() || username.is_empty() {
             return Err("SSH remote needs host and username.".to_string());
         }
         
-        let sshpass_prefix = if !password.is_empty() { "sshpass -e " } else { "" };
+        let is_key_auth = auth_method == "key" || (!private_key.is_empty() && password.is_empty());
+        let (sshpass_prefix, key_opt, auth_pass) = if is_key_auth {
+            let key_str = if !private_key.is_empty() {
+                format!(" -i {}", shq(&to_shell_path(private_key)))
+            } else {
+                "".to_string()
+            };
+            if !passphrase.is_empty() {
+                ("sshpass -e ".to_string(), key_str, passphrase.to_string())
+            } else {
+                ("".to_string(), key_str, "".to_string())
+            }
+        } else {
+            (
+                if !password.is_empty() { "sshpass -e ".to_string() } else { "".to_string() },
+                "".to_string(),
+                password.to_string(),
+            )
+        };
         let known_hosts = ssh_known_hosts_option();
         
         let ssh_cmd = format!(
-            "{}ssh -tt -p {} -o StrictHostKeyChecking=accept-new{}{}@{} {}",
+            "{}ssh{} -tt -p {} -o StrictHostKeyChecking=accept-new{}{}@{} {}",
             sshpass_prefix,
+            key_opt,
             shq(&port.to_string()),
             known_hosts,
             username,
@@ -1904,7 +2115,9 @@ fn get_terminal_command(remote: &serde_json::Value) -> Result<TerminalCommandSpe
         );
         
         let mut env_map = HashMap::new();
-        env_map.insert("SSHPASS".to_string(), password.to_string());
+        if !auth_pass.is_empty() {
+            env_map.insert("SSHPASS".to_string(), auth_pass);
+        }
         env_map.insert("TERM".to_string(), "xterm".to_string());
         
         let remote_name = remote.get("name").or_else(|| remote.get("host")).and_then(|v| v.as_str()).unwrap_or("");

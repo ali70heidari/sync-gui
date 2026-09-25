@@ -9,11 +9,13 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "node scripts/prepare-win-tools.mjs && tauri build",
     "build:linux": "tauri build",
-    "build:win": "tauri build --target x86_64-pc-windows-msvc",
+    "build:win": "node scripts/prepare-win-tools.mjs && tauri build --target x86_64-pc-windows-msvc",
+    "prepare:win": "node scripts/prepare-win-tools.mjs",
     "next:dev": "next dev --port 49173",
-    "next:build": "next build"
+    "next:build": "next build",
+    "test": "node --test test/*.test.mjs test/*.test.js"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

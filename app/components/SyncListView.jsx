@@ -22,7 +22,7 @@ function blankItem() {
     type: "folder",
     projectId: "",
     categoryId: "",
-    targets: [{ name: "", remoteIds: [], dest: "", variables: {} }],
+    targets: [{ name: "", remoteIds: [], dest: "", variables: {}, postSyncCommand: "" }],
   };
 }
 
@@ -92,6 +92,7 @@ export default function SyncListView({ config, onRefresh }) {
   const [confirmCategoryDelete, setConfirmCategoryDelete] = useState(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmForceUpload, setConfirmForceUpload] = useState(null);
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState("ready");
@@ -227,6 +228,7 @@ export default function SyncListView({ config, onRefresh }) {
           variables: {},
           variablesText: "",
           remoteSyncIgnoreText: "",
+          postSyncCommand: "",
         },
       ],
     });
@@ -245,6 +247,7 @@ export default function SyncListView({ config, onRefresh }) {
         variables: t.variables || {},
         variablesText: formatVariablesInput(t.variables || {}),
         remoteSyncIgnoreText: t.remoteSyncIgnore || "",
+        postSyncCommand: t.postSyncCommand || "",
       })),
     });
     setShowForm(true);
@@ -390,6 +393,7 @@ export default function SyncListView({ config, onRefresh }) {
             variables: {},
             variablesText: "",
             remoteSyncIgnoreText: "",
+            postSyncCommand: "",
           }
         : editing.targets[index];
     setTargetDraft({ index, target: { ...target } });
@@ -456,6 +460,7 @@ export default function SyncListView({ config, onRefresh }) {
           : [t.remoteId].filter(Boolean),
         variables: parseVariablesInput(t.variablesText || ""),
         remoteSyncIgnore: t.remoteSyncIgnoreText || "",
+        postSyncCommand: t.postSyncCommand?.trim() || "",
       }));
     if (!validTargets.length) {
       toast(
@@ -514,13 +519,13 @@ export default function SyncListView({ config, onRefresh }) {
   }
 
   function doSync(itemIds, direction, targetMap = {}, options = {}) {
-    const { liveItemId = null } = options;
+    const { liveItemId = null, force = false } = options;
     setStatus("running");
     setSyncingIds(itemIds);
     if (liveItemId) liveLastRunRef.current[liveItemId] = Date.now();
     const label = direction === "up" ? "up" : "down";
     setOutput(
-      `> syncing ${itemIds.length} item(s) ${label}${liveItemId ? " [live]" : ""}\n`,
+      `> syncing ${itemIds.length} item(s) ${label}${force ? " [forced]" : ""}${liveItemId ? " [live]" : ""}\n`,
     );
     fetch("/api/run", {
       method: "POST",
@@ -528,6 +533,7 @@ export default function SyncListView({ config, onRefresh }) {
       body: JSON.stringify({
         dryRun,
         noDelete,
+        force,
         direction,
         itemTargets: targetMap,
       }),
@@ -551,6 +557,12 @@ export default function SyncListView({ config, onRefresh }) {
         setSyncingIds([]);
         setCurrentJobId(null);
       });
+  }
+
+  function forcePreflightUpload() {
+    const pending = confirmForceUpload;
+    setConfirmForceUpload(null);
+    if (pending) doSync(pending.itemIds, "up", pending.itemTargets, { force: true });
   }
 
   function handleSingleSync(item, direction, targetIndices) {
@@ -1014,6 +1026,23 @@ export default function SyncListView({ config, onRefresh }) {
                   <Stop size={13} weight="bold" /> Cancel Operation
                 </button>
               )}
+              {output && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(output);
+                    toast("Console output copied to clipboard.");
+                  }}
+                  title="Copy console output"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <Copy size={13} weight="bold" /> Copy
+                </button>
+              )}
               <button onClick={() => setOutput("")}>Clear</button>
             </div>
           </div>
@@ -1305,6 +1334,19 @@ export default function SyncListView({ config, onRefresh }) {
                 />
               </label>
             )}
+            <label>
+              After successful upload (optional)
+              <textarea
+                className="target-vars"
+                value={targetDraft.target.postSyncCommand || ""}
+                onChange={(e) =>
+                  updateTargetDraft({ postSyncCommand: e.target.value })
+                }
+                placeholder="e.g. systemctl reload nginx"
+                rows={4}
+              />
+              <small>Runs on the target after the whole upload succeeds.</small>
+            </label>
           </div>
         </EditorModal>
       )}
@@ -1387,6 +1429,16 @@ export default function SyncListView({ config, onRefresh }) {
           confirmLabel="Delete"
           onConfirm={doRemove}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {confirmForceUpload && (
+        <ConfirmModal
+          title="Force Upload"
+          message="This replaces target files with the local copies. Unless No-delete is enabled, it also removes target-only files."
+          confirmLabel="Force upload"
+          onConfirm={forcePreflightUpload}
+          onCancel={() => setConfirmForceUpload(null)}
         />
       )}
 

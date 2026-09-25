@@ -37,7 +37,37 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev sshpass
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev rsync openssh-client sshpass
+
+      - name: setup MSYS2 (windows only)
+        if: matrix.platform == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          install: >-
+            rsync
+            openssh
+            sshpass
+            findutils
+            coreutils
+
+      - name: bundle Windows tools into vendor directory
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "src-tauri/vendor/win-tools/usr/bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path "src-tauri/vendor/win-tools/tmp" | Out-Null
+          New-Item -ItemType Directory -Force -Path "src-tauri/vendor/win-tools/home/sync-gui/.ssh" | Out-Null
+          
+          $msysBin = "C:\msys64\usr\bin"
+          Copy-Item "$msysBin\msys-*.dll" -Destination "src-tauri/vendor/win-tools/usr/bin/" -Force
+          $tools = @("bash.exe", "rsync.exe", "ssh.exe", "sshpass.exe", "ssh-keygen.exe", "ssh-keyscan.exe", "mkdir.exe", "find.exe", "stty.exe", "sh.exe", "rm.exe", "cat.exe", "cp.exe")
+          foreach ($t in $tools) {
+            if (Test-Path "$msysBin\$t") {
+              Copy-Item "$msysBin\$t" -Destination "src-tauri/vendor/win-tools/usr/bin/" -Force
+            }
+          }
+          Write-Host "Bundled $( (Get-ChildItem src-tauri/vendor/win-tools/usr/bin).Count ) Windows tools successfully."
 
       - name: install frontend dependencies
         run: npm install

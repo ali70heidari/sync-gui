@@ -119,11 +119,35 @@ if ($AllOk) {
   Warn "Some tools missing — sync may not work"
 }
 
-if (Test-Path $AppInstaller) {
+# Try to find installer dynamically if default is not found
+$installerToRun = $AppInstaller
+if (-not (Test-Path $installerToRun)) {
+  $foundInstaller = Get-ChildItem -Path . -Filter "*sync-gui*.exe" -File | Select-Object -First 1
+  if ($foundInstaller) { $installerToRun = $foundInstaller.FullName }
+}
+
+# If inside source repository, bundle tools into vendor directory
+$vendorDir = "$PSScriptRoot\..\src-tauri\vendor\win-tools\usr\bin"
+if (Test-Path "$PSScriptRoot\..\src-tauri") {
+  Write-Host "  Copying tools to src-tauri\vendor\win-tools for standalone bundling..." -ForegroundColor Cyan
+  New-Item -ItemType Directory -Force -Path $vendorDir | Out-Null
+  New-Item -ItemType Directory -Force -Path "$PSScriptRoot\..\src-tauri\vendor\win-tools\tmp" | Out-Null
+  New-Item -ItemType Directory -Force -Path "$PSScriptRoot\..\src-tauri\vendor\win-tools\home\sync-gui\.ssh" | Out-Null
+  Copy-Item "$Msys2Dir\usr\bin\msys-*.dll" -Destination $vendorDir -Force
+  $tools = @("bash.exe", "rsync.exe", "ssh.exe", "sshpass.exe", "ssh-keygen.exe", "mkdir.exe", "find.exe", "stty.exe", "sh.exe", "rm.exe", "cat.exe", "cp.exe")
+  foreach ($tool in $tools) {
+    if (Test-Path "$Msys2Dir\usr\bin\$tool") {
+      Copy-Item "$Msys2Dir\usr\bin\$tool" -Destination $vendorDir -Force
+    }
+  }
+  Pass "Bundled tools into src-tauri\vendor\win-tools"
+}
+
+if (Test-Path $installerToRun) {
   if (Confirm-Action "Install $AppName now?") {
-    Write-Host "  Running installer..."
-    Start-Process -FilePath $AppInstaller -Wait
+    Write-Host "  Running installer ($installerToRun)..."
+    Start-Process -FilePath $installerToRun -Wait
   }
 } else {
-  Pass "Dependencies ready — run $AppInstaller manually"
+  Pass "Dependencies ready. Run npm run dev or build:win to package."
 }

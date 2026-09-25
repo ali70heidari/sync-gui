@@ -132,6 +132,7 @@ if (typeof window !== 'undefined') {
               direction: body.direction,
               dryRun: !!body.dryRun,
               noDelete: !!body.noDelete,
+              force: !!body.force,
               itemTargets: body.itemTargets || {},
             });
             return new Response(JSON.stringify(job), {
