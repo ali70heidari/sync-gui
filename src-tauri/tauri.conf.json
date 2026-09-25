@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "Sync GUI",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "identifier": "com.hamidrg.sync-gui",
   "build": {
     "beforeDevCommand": "npm run next:dev",

@@ -131,6 +131,17 @@ fn init_env(_app_handle: &AppHandle) {
             }
         }
     }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = env::var("HOME").unwrap_or_default();
+        let local_bin = format!("{}/.local/bin:/usr/local/bin", home);
+        if let Ok(current_path) = env::var("PATH") {
+            env::set_var("PATH", format!("{}:{}", local_bin, current_path));
+        } else {
+            env::set_var("PATH", local_bin);
+        }
+    }
 }
 
 // =========================================================================
@@ -430,9 +441,11 @@ fn check_dependencies() -> Result<serde_json::Value, String> {
         }))
     } else {
         // Unix platforms
+        let home = env::var("HOME").unwrap_or_default();
+        let path_env = format!("{}/.local/bin:/usr/local/bin:/usr/bin:/bin", home);
         for key in deps.keys().cloned().collect::<Vec<String>>() {
             let output = std::process::Command::new("sh")
-                .args(["-c", &format!("command -v {}", key)])
+                .args(["-c", &format!("PATH=\"{}:$PATH\"; command -v {}", path_env, key)])
                 .output();
             deps.insert(key, output.map(|o| o.status.success()).unwrap_or(false));
         }
@@ -557,9 +570,16 @@ fn run_bash_process_ctx(
     let bash_path = env::var("SYNC_GUI_BASH")
         .unwrap_or_else(|_| if cfg!(target_os = "windows") { "C:\\msys64\\usr\\bin\\bash.exe".to_string() } else { "bash".to_string() });
 
+    let path_prefix = if cfg!(target_os = "windows") {
+        "PATH=/usr/bin:$PATH".to_string()
+    } else {
+        let home = env::var("HOME").unwrap_or_default();
+        format!("PATH={}/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH", home)
+    };
+
     let mut cmd = std::process::Command::new(&bash_path);
     cmd.arg("-lc")
-        .arg(format!("PATH=/usr/bin:$PATH\n{}", command_str));
+        .arg(format!("{}\n{}", path_prefix, command_str));
 
     cmd.env("SSHPASS", password);
     for (k, v) in env::vars() {
