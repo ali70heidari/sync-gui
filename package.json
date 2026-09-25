@@ -15,7 +15,7 @@
     "prepare:win": "node scripts/prepare-win-tools.mjs",
     "next:dev": "next dev --port 49173",
     "next:build": "next build",
-    "test": "node --test test/*.test.mjs test/*.test.js"
+    "test": "node --test test/"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
