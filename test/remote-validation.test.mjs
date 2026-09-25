@@ -9,9 +9,11 @@ import { writeConfig } from '../lib/config.js';
 
 test('runSync throws an error when a target references an unknown remote ID', async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sync-gui-remote-test-'));
-  const oldConfigPath = process.env.SYNC_GUI_CONFIG;
+  const oldConfigPath = process.env.SYNC_CONFIG;
   const configPath = path.join(tempDir, 'config.json');
+  process.env.SYNC_CONFIG = configPath;
   process.env.SYNC_GUI_CONFIG = configPath;
+
 
   try {
     const dummyFile = path.join(tempDir, 'source.txt');
@@ -46,8 +48,10 @@ test('runSync throws an error when a target references an unknown remote ID', as
     );
   } finally {
     if (oldConfigPath) {
+      process.env.SYNC_CONFIG = oldConfigPath;
       process.env.SYNC_GUI_CONFIG = oldConfigPath;
     } else {
+      delete process.env.SYNC_CONFIG;
       delete process.env.SYNC_GUI_CONFIG;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
