@@ -77,9 +77,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: sync-gui-v__VERSION__
+          tagName: v__VERSION__
           releaseName: 'Sync GUI v__VERSION__'
           releaseBody: 'See the assets to download the application for your OS.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
